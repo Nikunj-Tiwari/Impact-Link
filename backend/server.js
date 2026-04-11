@@ -1,0 +1,304 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const admin = require('firebase-admin');
+const Location = require('./models/Location');
+const Beneficiary = require('./models/Beneficiary');
+const Event = require('./models/Event');
+const Volunteer = require('./models/Volunteer');
+const AuditLog = require('./models/AuditLog');
+const { dbscan } = require('./services/clustering');
+const { encrypt, decrypt } = require('./services/encryption');
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Firebase Admin Setup
+try {
+  const serviceAccount = require('./serviceAccountKey.json');
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('Firebase Admin initialized.');
+} catch (error) {
+  console.warn('WARNING: Firebase Service Account Key not found. Auth middleware will be disabled for local testing.');
+}
+
+app.use(cors());
+app.use(express.json());
+
+// Firebase Auth Middleware
+const verifyToken = async (req, res, next) => {
+  const token = req.headers.authorization?.split('Bearer ')[1];
+  
+  if (!admin.apps.length) return next();
+
+  if (!token) return res.status(401).json({ error: 'No token provided' });
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    req.user = decodedToken;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Unauthorized' });
+  }
+};
+
+/**
+ * STRATEGIC: Audit PII Access
+ * Logs every time sensitive data is read.
+ */
+const auditPII = (action) => async (req, res, next) => {
+  try {
+    const log = new AuditLog({
+      userId: req.user?.uid || 'LOCAL_GUEST',
+      userEmail: req.user?.email || 'N/A',
+      action: action,
+      resource: 'BeneficiaryRecords',
+      ipAddress: req.ip
+    });
+    await log.save();
+    next();
+  } catch (error) {
+    console.error('Audit logging failed:', error);
+    next();
+  }
+};
+
+// --- ROUTES ---
+
+// 1. Locations
+app.get('/api/locations', async (req, res) => {
+  try {
+    const locations = await Location.find();
+    res.json(locations);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Beneficiaries (with PII Protection & Auditing)
+app.get('/api/beneficiaries', verifyToken, auditPII('VIEW_PII_LIST'), async (req, res) => {
+  try {
+    const records = await Beneficiary.find().populate('locationId');
+    // Decrypt names for display (only for authorized users)
+    const decrypted = records.map(r => ({
+      ...r.toObject(),
+      firstName: decrypt(r.firstName),
+      lastName: decrypt(r.lastName),
+      contactPhone: decrypt(r.contactPhone)
+    }));
+    res.json(decrypted);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/beneficiaries', verifyToken, auditPII('CREATE_PII'), async (req, res) => {
+  try {
+    const body = { ...req.body };
+    // Encrypt sensitive fields
+    body.firstName = encrypt(body.firstName);
+    body.lastName = encrypt(body.lastName);
+    body.contactPhone = encrypt(body.contactPhone);
+
+    const record = new Beneficiary(body);
+    await record.save();
+    res.status(201).json(record);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// 3. Responders (Volunteers)
+app.get('/api/volunteers', async (req, res) => {
+  try {
+    const volunteers = await Volunteer.find().populate('locationId');
+    res.json(volunteers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4. Events (Incidents) with Time-Decay Logic
+app.get('/api/incidents', async (req, res) => {
+  try {
+    const events = await Event.find().sort({ eventTime: -1 }).populate('locationId');
+    
+    // STRATEGIC: Apply Time-Decay (exp(-0.1 * days_old))
+    const now = new Date();
+    const legacyMap = events.map(e => {
+      const daysOld = (now - new Date(e.eventTime || Date.now())) / (1000 * 60 * 60 * 24);
+      const weight = Math.exp(-0.1 * daysOld).toFixed(4);
+
+      return {
+        _id: e._id,
+        id: e._id,
+        title: e.eventType + ' - ' + (e.locationId?.name || 'Area'),
+        location: e.locationId?.name || 'Area',
+        severity: e.severity,
+        resourceGap: e.resourceGap,
+        frequency: e.frequency,
+        timeSensitivity: e.timeSensitivity,
+        lat: e.lat,
+        lng: e.lng,
+        createdAt: e.eventTime,
+        weight: parseFloat(weight) // Added for heatmap weighting
+      };
+    });
+    res.json(legacyMap);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/incidents', verifyToken, async (req, res) => {
+  try {
+    const body = { ...req.body };
+    // Map frontend field names to Event schema
+    if (body.needType && !body.eventType) {
+      body.eventType = body.needType;
+    }
+    if (body.title && !body.eventType) {
+      body.eventType = body.title.split(' - ')[0] || 'General';
+    }
+    const newEvent = new Event(body);
+    const saved = await newEvent.save();
+    res.status(201).json(saved);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/incidents/:id', verifyToken, async (req, res) => {
+  try {
+    const updated = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(updated);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// 5. Data Ingestion (ETL with Deduplication)
+app.post('/api/ingestion/bulk', verifyToken, async (req, res) => {
+  try {
+    const data = req.body; // Expecting an array of objects
+    if (!Array.isArray(data)) return res.status(400).json({ error: 'Data must be an array' });
+
+    const results = { imported: 0, skipped: 0, errors: [] };
+
+    for (const item of data) {
+      try {
+        /**
+         * STRATEGIC: Fuzzy Deduplication
+         * Check if beneficiary already exists for this event
+         */
+        if (item.aadharMasked) {
+          const existing = await Beneficiary.findOne({ aadharMasked: item.aadharMasked });
+          if (existing) {
+             results.skipped++;
+             continue; 
+          }
+        }
+
+        const newEvent = new Event({
+          ...item,
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lng),
+          severity: parseInt(item.severity)
+        });
+        await newEvent.save();
+        results.imported++;
+      } catch (err) {
+        results.errors.push({ item, error: err.message });
+      }
+    }
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. AI Analytics: Spatial Clustering (DeepScan)
+app.get('/api/analytics/clusters', async (req, res) => {
+  try {
+    const events = await Event.find().limit(500);
+    if (events.length < 3) return res.json({ points: [], hotspots: [] });
+
+    const coords = events.map(e => ({ lat: e.lat, lng: e.lng }));
+    const labels = dbscan(coords, 0.05, 3);
+
+    const result = events.map((e, i) => ({
+      ...e.toObject(),
+      cluster: labels[i]
+    }));
+
+    // Group by cluster and calculate centroids/intensity
+    const clustersMap = {};
+    result.forEach(p => {
+      if (p.cluster === -1) return;
+      if (!clustersMap[p.cluster]) {
+        clustersMap[p.cluster] = { cluster: p.cluster, lat: 0, lng: 0, severity: 0, count: 0, points: [] };
+      }
+      const c = clustersMap[p.cluster];
+      c.lat += p.lat;
+      c.lng += p.lng;
+      c.severity += (p.severity || 5);
+      c.count += 1;
+      c.points.push(p._id);
+    });
+
+    const hotspots = Object.values(clustersMap).map(c => ({
+      ...c,
+      lat: c.lat / c.count,
+      lng: c.lng / c.count,
+      avgSeverity: c.severity / c.count
+    }));
+
+    res.json({ points: result, hotspots });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Seed Initial Data (Normalized)
+const seedData = async () => {
+  const locCount = await Location.countDocuments();
+  if (locCount === 0) {
+    console.log('Seeding normalized data structures...');
+    
+    // 1. Create Core Locations
+    const locs = await Location.insertMany([
+      { name: 'Mumbai Slums (Sector 1)', type: 'Sector', lat: 19.0760, lng: 72.8777 },
+      { name: 'Bangalore East (Sector 4)', type: 'Sector', lat: 12.9716, lng: 77.5946 },
+      { name: 'Delhi NCR (Core Zone)', type: 'Sector', lat: 28.6139, lng: 77.2090 }
+    ]);
+
+    // 2. Create Initial Events linked to Locations
+    await Event.insertMany([
+      { locationId: locs[0]._id, eventType: 'Medical Shortage', severity: 9, resourceGap: 9, frequency: 8, timeSensitivity: 10, lat: 19.0760, lng: 72.8777 },
+      { locationId: locs[1]._id, eventType: 'Water Contamination', severity: 7, resourceGap: 7, frequency: 6, timeSensitivity: 8, lat: 12.9716, lng: 77.5946, eventTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // 7 days old
+      { locationId: locs[2]._id, eventType: 'Grid Failure', severity: 6, resourceGap: 5, frequency: 5, timeSensitivity: 6, lat: 28.6139, lng: 77.2090 }
+    ]);
+
+    // 3. Create Volunteers
+    await Volunteer.insertMany([
+      { name: 'Rahul Sharma', status: 'Deployed', locationId: locs[0]._id, contactPhone: '+91 98XXX XXXX1', skills: ['First Aid', 'Logistics'] },
+      { name: 'Priya Singh', status: 'Active', locationId: locs[1]._id, contactPhone: '+91 98XXX XXXX2', skills: ['Nursing'] }
+    ]);
+
+    console.log('Database initialized with normalized schema.');
+  }
+};
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => {
+    console.log('Connected to MongoDB Atlas');
+    seedData();
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  })
+  .catch(err => console.error('MongoDB connection error:', err));
