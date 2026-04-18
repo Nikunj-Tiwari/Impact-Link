@@ -8,6 +8,8 @@ const Beneficiary = require('./models/Beneficiary');
 const Event = require('./models/Event');
 const Volunteer = require('./models/Volunteer');
 const AuditLog = require('./models/AuditLog');
+const Project = require('./models/Project');
+const Supply = require('./models/Supply');
 const { dbscan } = require('./services/clustering');
 const { encrypt, decrypt } = require('./services/encryption');
 
@@ -113,10 +115,64 @@ app.post('/api/beneficiaries', verifyToken, auditPII('CREATE_PII'), async (req, 
   }
 });
 
+// 2.5 Projects
+app.get('/api/projects', async (req, res) => {
+  try {
+    const projects = await Project.find().sort({ createdAt: -1 });
+    res.json(projects);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/projects', verifyToken, async (req, res) => {
+  try {
+    const newProj = new Project(req.body);
+    const saved = await newProj.save();
+    res.status(201).json(saved);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/projects/:id', verifyToken, async (req, res) => {
+  try {
+    const updated = await Project.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Project not found' });
+    res.json(updated);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/projects/:id', verifyToken, async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    // Protect Global Overview
+    if (project.scope === 'Global') {
+      return res.status(403).json({ error: 'Global baseline project cannot be deleted.' });
+    }
+
+    // Cascading Delete: Events and Supplies
+    await Event.deleteMany({ projectId: req.params.id });
+    await Supply.deleteMany({ projectId: req.params.id });
+    
+    await Project.findByIdAndDelete(req.params.id);
+    
+    res.json({ message: 'Project and all associated mission data cleared.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 3. Responders (Volunteers)
 app.get('/api/volunteers', async (req, res) => {
   try {
-    const volunteers = await Volunteer.find().populate('locationId');
+    const query = {};
+    if (req.query.projectId) query.projectIds = req.query.projectId;
+    const volunteers = await Volunteer.find(query).populate('locationId');
     res.json(volunteers);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -126,7 +182,9 @@ app.get('/api/volunteers', async (req, res) => {
 // 4. Events (Incidents) with Time-Decay Logic
 app.get('/api/incidents', async (req, res) => {
   try {
-    const events = await Event.find().sort({ eventTime: -1 }).populate('locationId');
+    const query = {};
+    if (req.query.projectId) query.projectId = req.query.projectId;
+    const events = await Event.find(query).sort({ eventTime: -1 }).populate('locationId');
     
     // STRATEGIC: Apply Time-Decay (exp(-0.1 * days_old))
     const now = new Date();
@@ -182,6 +240,27 @@ app.patch('/api/incidents/:id', verifyToken, async (req, res) => {
   }
 });
 
+// 4.5 Resource Hub (Logistics)
+app.get('/api/resource-hub', async (req, res) => {
+  try {
+    const query = {};
+    if (req.query.projectId) query.projectId = req.query.projectId;
+    const supplies = await Supply.find(query);
+    res.json(supplies);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/resource-hub/:id', verifyToken, async (req, res) => {
+  try {
+    const updated = await Supply.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(updated);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // 5. Data Ingestion (ETL with Deduplication)
 app.post('/api/ingestion/bulk', verifyToken, async (req, res) => {
   try {
@@ -225,7 +304,10 @@ app.post('/api/ingestion/bulk', verifyToken, async (req, res) => {
 // 6. AI Analytics: Spatial Clustering (DeepScan)
 app.get('/api/analytics/clusters', async (req, res) => {
   try {
-    const events = await Event.find().limit(500);
+    const query = {};
+    if (req.query.projectId) query.projectId = req.query.projectId;
+    
+    const events = await Event.find(query).limit(500);
     if (events.length < 3) return res.json({ points: [], hotspots: [] });
 
     const coords = events.map(e => ({ lat: e.lat, lng: e.lng }));
@@ -264,12 +346,27 @@ app.get('/api/analytics/clusters', async (req, res) => {
   }
 });
 
-// Seed Initial Data (Normalized)
+// Seed Initial Data (Normalized & Project-Scoped)
 const seedData = async () => {
-  const locCount = await Location.countDocuments();
-  if (locCount === 0) {
-    console.log('Seeding normalized data structures...');
+  const projectCount = await Project.countDocuments();
+  if (projectCount === 0) {
+    console.log('Migrating to Project-Based Architecture... Clearing old data.');
+    await Event.deleteMany({});
+    await Beneficiary.deleteMany({});
+    await Volunteer.deleteMany({});
+    await Location.deleteMany({});
+    await Supply.deleteMany({});
     
+    console.log('Seeding Global Default Project & Core Locations...');
+    const globalProject = await Project.create({
+      name: 'Global Overview (All India)',
+      scope: 'Global',
+      hierarchicalSupplies: [{ 
+        category: 'Emergency Provisions', 
+        items: [{ type: 'Standard Relief Kit', unit: 'kits', targetQuantity: 1000 }] 
+      }]
+    });
+
     // 1. Create Core Locations
     const locs = await Location.insertMany([
       { name: 'Mumbai Slums (Sector 1)', type: 'Sector', lat: 19.0760, lng: 72.8777 },
@@ -279,18 +376,18 @@ const seedData = async () => {
 
     // 2. Create Initial Events linked to Locations
     await Event.insertMany([
-      { locationId: locs[0]._id, eventType: 'Medical Shortage', severity: 9, resourceGap: 9, frequency: 8, timeSensitivity: 10, lat: 19.0760, lng: 72.8777 },
-      { locationId: locs[1]._id, eventType: 'Water Contamination', severity: 7, resourceGap: 7, frequency: 6, timeSensitivity: 8, lat: 12.9716, lng: 77.5946, eventTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // 7 days old
-      { locationId: locs[2]._id, eventType: 'Grid Failure', severity: 6, resourceGap: 5, frequency: 5, timeSensitivity: 6, lat: 28.6139, lng: 77.2090 }
+      { projectId: globalProject._id, locationId: locs[0]._id, eventType: 'Medical Shortage', severity: 9, resourceGap: 9, frequency: 8, timeSensitivity: 10, lat: 19.0760, lng: 72.8777 },
+      { projectId: globalProject._id, locationId: locs[1]._id, eventType: 'Water Contamination', severity: 7, resourceGap: 7, frequency: 6, timeSensitivity: 8, lat: 12.9716, lng: 77.5946, eventTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      { projectId: globalProject._id, locationId: locs[2]._id, eventType: 'Grid Failure', severity: 6, resourceGap: 5, frequency: 5, timeSensitivity: 6, lat: 28.6139, lng: 77.2090 }
     ]);
 
     // 3. Create Volunteers
     await Volunteer.insertMany([
-      { name: 'Rahul Sharma', status: 'Deployed', locationId: locs[0]._id, contactPhone: '+91 98XXX XXXX1', skills: ['First Aid', 'Logistics'] },
-      { name: 'Priya Singh', status: 'Active', locationId: locs[1]._id, contactPhone: '+91 98XXX XXXX2', skills: ['Nursing'] }
+      { projectIds: [globalProject._id], name: 'Rahul Sharma', status: 'Deployed', locationId: locs[0]._id, contactPhone: '+91 98XXX XXXX1', skills: ['First Aid', 'Logistics'] },
+      { projectIds: [globalProject._id], name: 'Priya Singh', status: 'Active', locationId: locs[1]._id, contactPhone: '+91 98XXX XXXX2', skills: ['Nursing'] }
     ]);
 
-    console.log('Database initialized with normalized schema.');
+    console.log('Database initialized with Project-Based architecture.');
   }
 };
 

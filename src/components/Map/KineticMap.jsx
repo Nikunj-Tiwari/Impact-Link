@@ -38,17 +38,38 @@ const MAP_OPTIONS = {
 
 const LIBRARIES = ['visualization'];
 
-export default function KineticMap({ incidents, selectedIncident, activeDispatches, clusters = { points: [], hotspots: [] } }) {
+export default function KineticMap({ 
+  isImmersive, 
+  incidents, 
+  selectedIncident, 
+  activeDispatches, 
+  clusters = { points: [], hotspots: [] },
+  projectRegions = [] 
+}) {
   const [vizMode, setVizMode] = React.useState('STRATEGIC');
   const [showNoise, setShowNoise] = React.useState(false);
   const [currentZoom, setCurrentZoom] = React.useState(5);
   const [mapRef, setMapRef] = React.useState(null);
   const [hoveredHotspot, setHoveredHotspot] = React.useState(null);
 
+  const dynamicOptions = useMemo(() => ({
+    ...MAP_OPTIONS,
+    restriction: {
+      latLngBounds: {
+        north: 35.4,
+        south: 8.0,
+        west: 68.7,
+        east: 97.2,
+      },
+      strictBounds: true,
+    },
+    minZoom: isImmersive ? 5.5 : 4.5,
+  }), [isImmersive]);
+
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "",
-    libraries: LIBRARIES
+    libraries: ['visualization', 'places']
   });
 
   // 1. SMART ADAPTIVE RADIUS (Non-linear for analytical clarity)
@@ -179,13 +200,13 @@ export default function KineticMap({ incidents, selectedIncident, activeDispatch
   };
 
   if (!isLoaded) return (
-    <div style={{ height: '500px', background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', border: '1px solid var(--border-subtle)', borderRadius: '4px' }}>
+    <div style={{ height: '100%', minHeight: '500px', background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', border: '1px solid var(--border-subtle)', borderRadius: '4px' }}>
       Loading Spatial Radar...
     </div>
   );
 
   return (
-    <div style={{ flex: 'none', height: '500px', position: 'relative', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-subtle)', background: '#050505' }}>
+    <div style={{ width: '100%', height: '100%', minHeight: '450px', position: 'relative', borderRadius: '4px', overflow: 'hidden', background: '#050505' }}>
       <style>{`
         @keyframes pulse-ring {
           0% { transform: scale(0.95); opacity: 0.6; }
@@ -197,17 +218,48 @@ export default function KineticMap({ incidents, selectedIncident, activeDispatch
         }
       `}</style>
 
-      <GoogleMap
-        mapContainerStyle={containerStyle}
-        center={HUB_POS}
-        zoom={currentZoom}
-        onLoad={(map) => {
-          setMapRef(map);
-          map.addListener('zoom_changed', () => setCurrentZoom(map.getZoom()));
-        }}
-        options={MAP_OPTIONS}
-      >
-        {vizMode === 'STRATEGIC' && (
+        <GoogleMap
+          mapContainerStyle={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
+          center={HUB_POS}
+          zoom={currentZoom}
+          onLoad={(map) => {
+            setMapRef(map);
+            map.addListener('zoom_changed', () => setCurrentZoom(map.getZoom()));
+          }}
+          options={dynamicOptions}
+        >
+          {/* Strategic Operational Regions */}
+          {(projectRegions || []).map((region, idx) => (
+            <React.Fragment key={`region-${idx}`}>
+              <CircleF
+                center={region.center}
+                radius={region.radius * 1000}
+                options={{
+                  fillColor: "rgba(79, 70, 229, 0.05)",
+                  fillOpacity: 0.2,
+                  strokeColor: "rgba(79, 70, 229, 0.4)",
+                  strokeWeight: 1,
+                  clickable: false,
+                  zIndex: 5
+                }}
+              />
+              {currentZoom > 8 && (
+                <MarkerF
+                  position={region.center}
+                  icon={{
+                    path: window.google.maps.SymbolPath.CIRCLE,
+                    fillColor: "rgba(79, 70, 229, 0.8)",
+                    fillOpacity: 1,
+                    strokeWeight: 1,
+                    strokeColor: "#fff",
+                    scale: 3
+                  }}
+                />
+              )}
+            </React.Fragment>
+          ))}
+
+          {vizMode === 'STRATEGIC' && (
           <>
             {/* 1. Render Aggregated Hotspots as concentric circles */}
             {((clusters && clusters.hotspots) || []).map((h, i) => {
@@ -259,7 +311,7 @@ export default function KineticMap({ incidents, selectedIncident, activeDispatch
               exit={{ opacity: 0, x: -20 }}
               style={{
                 position: 'absolute',
-                top: '20px',
+                top: isImmersive ? '280px' : '20px',
                 left: '20px',
                 zIndex: 1000,
                 background: 'rgba(5, 10, 15, 0.95)',

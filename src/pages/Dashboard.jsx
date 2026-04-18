@@ -19,9 +19,12 @@ import {
   Radar,
   Search,
   Filter,
-  Eye
+  Eye,
+  ChevronDown,
+  Package
 } from 'lucide-react';
 import BeneficiaryModal from '../components/Modals/BeneficiaryModal';
+import ResourceLogisticsTab from '../components/Resources/ResourceLogisticsTab';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import ImpactSimulator from '../components/Simulator/ImpactSimulator';
@@ -33,8 +36,9 @@ import AIGlobalAdvisory from '../components/Radar/AIGlobalAdvisory';
 import RedeploymentStrategy from '../components/Radar/RedeploymentStrategy';
 import NewIncidentModal from '../components/Modals/NewIncidentModal';
 import WorkspaceModal from '../components/Modals/WorkspaceModal';
-import { extractDataFromReport } from '../services/gemini';
-import { getSectorHealthStatus } from '../services/logic';
+import ProjectWizard from '../components/Modals/ProjectWizard/ProjectWizard';
+import { extractDataFromReport, getNetworkAnomalyAnalysis } from '../services/gemini';
+import { getSectorHealthStatus, getStrategicMissions } from '../services/logic';
 import { logout } from '../services/firebase';
 import { resolveCoordinates } from '../services/coordinates';
 import * as api from '../services/api';
@@ -56,7 +60,77 @@ function timeAgo(dateStr) {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
+import { useProject } from '../context/ProjectContext';
+import ProjectSelector from '../components/ProjectSelector';
+
+const NavGroup = ({ label, items, activeTab, setActiveTab }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const isActiveGroup = items.some(i => i.id === activeTab);
+  
+  return (
+    <div 
+      style={{ position: 'relative' }}
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+    >
+      <button
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.4rem',
+          color: isActiveGroup ? '#fff' : 'var(--text-muted)',
+          background: isActiveGroup ? 'rgba(255,255,255,0.08)' : 'transparent',
+          padding: '0.5rem 1rem', fontSize: '0.8125rem',
+          fontWeight: isActiveGroup ? 500 : 400,
+          border: 'none', borderRadius: '8px', cursor: 'pointer',
+          transition: 'all 0.2s ease', whiteSpace: 'nowrap'
+        }}
+        onMouseEnter={e => { if (!isActiveGroup) e.currentTarget.style.color = '#fff'; }}
+        onMouseLeave={e => { if (!isActiveGroup) e.currentTarget.style.color = 'var(--text-muted)'; }}
+      >
+        {label} <ChevronDown size={14} style={{ opacity: 0.7, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+      </button>
+      
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.15 }}
+            style={{
+              position: 'absolute', top: '120%', left: '50%', transform: 'translateX(-50%)',
+              background: '#111', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px', padding: '0.5rem', display: 'flex', flexDirection: 'column',
+              gap: '0.25rem', minWidth: '160px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', zIndex: 100
+            }}
+          >
+            {items.map(item => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); setIsOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.5rem 0.75rem', border: 'none', cursor: 'pointer',
+                  background: activeTab === item.id ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  color: activeTab === item.id ? '#fff' : 'var(--text-dim)',
+                  borderRadius: '6px', textAlign: 'left', fontSize: '0.8125rem', transition: 'all 0.2s'
+                }}
+                onMouseEnter={e => { if (activeTab !== item.id) { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#fff'; } }}
+                onMouseLeave={e => { if (activeTab !== item.id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-dim)'; } }}
+              >
+                <item.icon size={14} style={{ opacity: activeTab === item.id ? 1 : 0.7, color: 'var(--primary)' }} />
+                {item.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 export default function Dashboard() {
+  const { currentProject } = useProject();
+  const [viewMode, setViewMode] = useState('immersive');
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -65,6 +139,7 @@ export default function Dashboard() {
   const [activeDispatches, setActiveDispatches] = useState([]);
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
+  const [supplies, setSupplies] = useState([]);
   const [clusters, setClusters] = useState({ points: [], hotspots: [] });
   const [isIngesting, setIsIngesting] = useState(false);
   const [isNewIncidentOpen, setIsNewIncidentOpen] = useState(false);
@@ -72,21 +147,29 @@ export default function Dashboard() {
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
+  const [isProjectWizardOpen, setIsProjectWizardOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState(null);
+
+  const { refreshProjects, switchProject } = useProject();
 
   useEffect(() => {
     loadAllData();
-  }, []);
+  }, [currentProject]);
 
   const loadAllData = async () => {
     try {
-      const [incData, benData, cluData, volData] = await Promise.allSettled([
-        api.fetchIncidents(),
+      setLoading(true);
+      const projectId = currentProject?._id;
+      const [incData, benData, cluData, volData, supData] = await Promise.allSettled([
+        api.fetchIncidents(projectId),
         api.fetchBeneficiaries(),
-        api.fetchClusters(),
-        api.fetchVolunteers()
+        api.fetchClusters(projectId),
+        api.fetchVolunteers(projectId),
+        api.fetchResourceHub(projectId)
       ]);
       if (incData.status === 'fulfilled') setIncidents(incData.value);
       if (benData.status === 'fulfilled') setBeneficiaries(benData.value);
+      if (supData.status === 'fulfilled') setSupplies(supData.status === 'fulfilled' ? supData.value : []);
       if (cluData.status === 'fulfilled') {
         const val = cluData.value;
         if (Array.isArray(val)) {
@@ -170,9 +253,13 @@ export default function Dashboard() {
     const coords = resolveCoordinates(data.location);
     const newIncident = {
       ...data,
-      title: `${data.needType} - ${data.location}`,
-      eventType: data.needType,
-      type: data.severity > 8 ? 'Critical' : 'Alert',
+      title: `${data.needType || 'General Need'} - ${data.location || 'Unknown Area'}`,
+      eventType: data.needType || 'General',
+      type: (data.severity || 5) > 8 ? 'Critical' : 'Alert',
+      severity: Number(data.severity) || 5,
+      resourceGap: Number(data.resourceGap) || 5,
+      frequency: Number(data.frequency) || 5,
+      timeSensitivity: Number(data.timeSensitivity) || 5,
       lat: coords.lat,
       lng: coords.lng
     };
@@ -183,6 +270,34 @@ export default function Dashboard() {
       setActiveTab('overview');
     } catch (error) {
       console.error("Failed to save ingested incident:", error);
+      alert(`Backend rejected the incident data: ${error.message}`);
+    }
+  };
+
+  const handleUpdateResource = async (id, data) => {
+    try {
+      const updated = await api.updateResource(id, data);
+      setSupplies(prev => prev.map(s => s._id === id ? updated : s));
+    } catch (error) {
+      console.error("Failed to update resource:", error);
+    }
+  };
+
+  const handleEditProject = (project) => {
+    setEditingProject(project);
+    setIsProjectWizardOpen(true);
+  };
+
+  const handleDeleteProject = async (projectId) => {
+    try {
+      await api.deleteProject(projectId);
+      await refreshProjects();
+      // If deleted project was active, switch to first available
+      if (currentProject?._id === projectId) {
+        switchProject(null); // ProjectContext should handle fallback
+      }
+    } catch (error) {
+      alert(error.message);
     }
   };
 
@@ -196,11 +311,15 @@ export default function Dashboard() {
     );
   }
 
-  const navItems = [
+  const mainNavItems = [
     { id: 'overview', icon: Activity, label: 'Overview' },
     { id: 'analysis', icon: Crosshair, label: 'Threat Radar' },
-    { id: 'ai_radar', icon: Zap, label: 'AI Insights' },
+    { id: 'ai_radar', icon: Zap, label: 'AI Insights' }
+  ];
+
+  const opsNavItems = [
     { id: 'ingestion', icon: FileSearch, label: 'Data Ingestion' },
+    { id: 'supplies', icon: Package, label: 'Resource Logistics' },
     { id: 'beneficiaries', icon: Users, label: 'Beneficiaries' },
     { id: 'volunteers', icon: HandHeart, label: 'Responders' },
   ];
@@ -208,88 +327,146 @@ export default function Dashboard() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <header style={{ 
-        borderBottom: '1px solid var(--border-subtle)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
         padding: '0 2rem',
-        display: 'flex', 
-        justifyContent: 'space-between', 
+        display: 'grid', 
+        gridTemplateColumns: '1fr auto 1fr',
+        gap: '2rem',
         alignItems: 'center',
-        height: '3.5rem',
-        background: 'var(--bg-main)',
+        height: '4.5rem',
+        background: viewMode === 'immersive' ? 'rgba(15, 15, 15, 0.35)' : 'var(--bg-main)',
+        backdropFilter: viewMode === 'immersive' ? 'blur(24px)' : 'none',
         position: 'sticky',
         top: 0,
         zIndex: 50
       }}>
+        {/* Left Column: Logo & Context */}
         <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
           <div 
             onClick={() => window.location.href = '/'}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, letterSpacing: '-0.02em', color: '#fff', cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 600, letterSpacing: '-0.02em', color: '#fff', cursor: 'pointer', fontSize: '1.1rem' }}
           >
-            <div style={{ width: '14px', height: '14px', background: 'linear-gradient(135deg, #fff 0%, #666 100%)', borderRadius: '3px' }} />
+            <div style={{ width: '16px', height: '16px', background: 'linear-gradient(135deg, #fff 0%, #666 100%)', borderRadius: '4px', boxShadow: '0 0 10px rgba(255,255,255,0.2)' }} />
             ImpactLink
           </div>
-          
-          <nav style={{ display: 'flex', gap: '0.25rem' }}>
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className="btn"
-                style={{
-                  color: activeTab === item.id ? '#fff' : 'var(--text-muted)',
-                  background: activeTab === item.id ? 'var(--border-subtle)' : 'transparent',
-                  padding: '0.35rem 0.75rem',
-                  fontSize: '0.8125rem'
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
+
+          <ProjectSelector 
+            onNewProject={() => { setEditingProject(null); setIsProjectWizardOpen(true); }} 
+            onEditProject={handleEditProject}
+            onDeleteProject={handleDeleteProject}
+          />
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        {/* Center Column: Navigation Tabs */}
+        <nav style={{ display: 'flex', gap: '0.5rem', background: 'rgba(255,255,255,0.02)', padding: '0.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          {mainNavItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              style={{
+                color: activeTab === item.id ? '#fff' : 'var(--text-muted)',
+                background: activeTab === item.id ? 'rgba(255,255,255,0.08)' : 'transparent',
+                padding: '0.5rem 1rem',
+                fontSize: '0.8125rem',
+                fontWeight: activeTab === item.id ? 500 : 400,
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+              onMouseEnter={e => { if (activeTab !== item.id) e.currentTarget.style.color = '#fff'; }}
+              onMouseLeave={e => { if (activeTab !== item.id) e.currentTarget.style.color = 'var(--text-muted)'; }}
+            >
+              <item.icon size={14} style={{ opacity: activeTab === item.id ? 1 : 0.7 }} />
+              {item.label}
+            </button>
+          ))}
+          
+          {/* Grouped Workflow Tabs */}
+          <NavGroup label="Operations" items={opsNavItems} activeTab={activeTab} setActiveTab={setActiveTab} />
+        </nav>
+
+        {/* Right Column: Actions */}
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', alignItems: 'center' }}>
           <button 
-            className="btn" 
+            onClick={() => setViewMode(m => m === 'immersive' ? 'classic' : 'immersive')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.875rem', borderRadius: '8px', color: '#fff', cursor: 'pointer', transition: 'background 0.2s', whiteSpace: 'nowrap' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+          >
+            {viewMode === 'immersive' ? <Eye size={14} color="var(--primary)" /> : <MapIcon size={14} />} 
+            {viewMode === 'immersive' ? 'Exit Immersive' : 'Immersive Map'}
+          </button>
+
+          <div style={{ width: '1px', height: '1.5rem', background: 'rgba(255,255,255,0.1)', margin: '0 0.25rem' }} />
+
+          <button 
+            onClick={() => setIsBeneficiaryOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', border: '1px solid rgba(255,255,255,0.05)', background: 'transparent', padding: '0.5rem 0.875rem', borderRadius: '8px', color: '#fff', cursor: 'pointer', transition: 'background 0.2s' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <User size={14} /> Record
+          </button>
+
+          <button 
             onClick={() => setIsWorkspaceOpen(true)}
-            style={{ fontSize: '0.8125rem' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', border: '1px solid rgba(255,255,255,0.05)', background: 'transparent', padding: '0.5rem 0.875rem', borderRadius: '8px', color: '#fff', cursor: 'pointer', transition: 'background 0.2s' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             <Settings size={14} /> Workspace
           </button>
+          
           <button 
-            className="btn btn-primary" 
+            className="btn-primary" 
             onClick={() => setIsNewIncidentOpen(true)}
-            style={{ fontSize: '0.8125rem', padding: '0.35rem 0.75rem' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
-            <Plus size={14} /> New Incident
+            <Plus size={14} /> Incident
           </button>
+          
           <button 
-            className="btn" 
-            onClick={() => setIsBeneficiaryOpen(true)}
-            style={{ fontSize: '0.8125rem', background: 'rgba(255,255,255,0.05)' }}
-          >
-            <User size={14} /> + Record
-          </button>
-          <button 
-            className="btn" 
             onClick={handleLogout}
-            style={{ fontSize: '0.8125rem', color: 'var(--error)' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: 'var(--error)', width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', marginLeft: '0.5rem' }}
+            title="Log Out"
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
           >
             <LogOut size={14} />
           </button>
         </div>
       </header>
 
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '3rem 4rem', position: 'relative' }}>
-        <div className="radial-glow" style={{ top: '-10%', left: '20%' }} />
+      {viewMode === 'immersive' && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'auto' }}>
+          <KineticMap 
+            isImmersive={true} 
+            incidents={incidents} 
+            activeDispatches={activeDispatches} 
+            clusters={strategicClusters} 
+            projectRegions={currentProject?.regions}
+          />
+        </div>
+      )}
+
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: viewMode === 'immersive' ? '2rem 4rem' : '3rem 4rem', position: 'relative', zIndex: 1, pointerEvents: viewMode === 'immersive' ? 'none' : 'auto' }}>
+        {viewMode === 'classic' && <div className="radial-glow" style={{ top: '-10%', left: '20%' }} />}
         
+        {viewMode === 'classic' && (
         <div style={{ marginBottom: '4rem', maxWidth: '800px', position: 'relative', zIndex: 10 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', border: '1px solid var(--border-subtle)', borderRadius: '1rem', padding: '0.25rem 0.75rem', fontSize: '0.75rem', marginBottom: '1.5rem', color: 'var(--text-muted)' }}>
              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 8px var(--success)' }} />
-             Gemini 1.5 Flash Engine is Active
+             Gemini 2.5 Flash Engine is Active
           </div>
           <h1 className="hero-title">Extreme Orchestration for Smart Resource Allocation</h1>
           <p className="hero-subtitle">Aggregating scattered NGO data. Eliminating misallocation through AI-driven visibility.</p>
         </div>
+        )}
 
         <AnimatePresence mode="wait">
           <motion.div
@@ -298,7 +475,7 @@ export default function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            style={{ width: '100%', maxWidth: '1400px', alignSelf: 'center', flex: 1 }}
+            style={{ width: '100%', maxWidth: '1400px', alignSelf: 'center', flex: 1, pointerEvents: (viewMode === 'immersive' && activeTab === 'overview') ? 'none' : 'auto' }}
           >
             {activeTab === 'overview' && (
               <OverviewTab 
@@ -309,10 +486,12 @@ export default function Dashboard() {
                 clusters={strategicClusters} 
                 onDispatch={handleDispatch}
                 allocationEfficiency={allocationEfficiency}
+                viewMode={viewMode}
               />
             )}
-            {activeTab === 'analysis' && <AnalysisTab incidents={incidents} />}
-            {activeTab === 'ai_radar' && <AIRadarTab clusters={clusters} incidents={incidents} />}
+            {activeTab === 'analysis' && <AnalysisTab incidents={incidents} volunteers={volunteers} />}
+            {activeTab === 'ai_radar' && <AIRadarTab clusters={strategicClusters} incidents={incidents} />}
+            {activeTab === 'supplies' && <ResourceLogisticsTab project={currentProject} resources={supplies} onUpdateResource={handleUpdateResource} />}
             {activeTab === 'beneficiaries' && <BeneficiariesTab beneficiaries={beneficiaries} onView={(b) => {
               setSelectedBeneficiary(b);
               setIsViewOpen(true);
@@ -334,6 +513,18 @@ export default function Dashboard() {
         onClose={() => setIsBeneficiaryOpen(false)}
         onAdd={handleCreateBeneficiary}
       />
+
+      <AnimatePresence>
+        {isProjectWizardOpen && (
+          <ProjectWizard 
+            onClose={() => {
+              setIsProjectWizardOpen(false);
+              setEditingProject(null);
+            }} 
+            initialData={editingProject}
+          />
+        )}
+      </AnimatePresence>
 
       <BeneficiaryModal 
         isOpen={isViewOpen} 
@@ -373,45 +564,276 @@ export default function Dashboard() {
   );
 }
 
-function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispatches, clusters, onDispatch, allocationEfficiency }) {
+function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispatches, clusters, onDispatch, allocationEfficiency, viewMode, volunteers }) {
+  const [selectedMission, setSelectedMission] = useState(null);
   const [selectedIncident, setSelectedIncident] = useState(null);
+  const [isDrillingDown, setIsDrillingDown] = useState(false);
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1px', background: 'var(--border-subtle)', border: '1px solid var(--border-subtle)', borderRadius: '8px', overflow: 'hidden' }}>
-      <div className="pane" style={{ gridColumn: 'span 12', display: 'flex', gap: '4rem', padding: '1.5rem 2rem', alignItems: 'center' }}>
-        <div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>Active Incidents</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 500, color: '#fff' }}>{incidents.length}</div>
+  const missions = getStrategicMissions(incidents);
+
+  const renderStats = (isImmersive) => (
+    <div style={{ display: 'flex', gap: isImmersive ? '3rem' : '4rem', alignItems: 'center' }}>
+      <div>
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>Active Incidents</div>
+        <div style={{ fontSize: '1.5rem', fontWeight: 500, color: '#fff' }}>{incidents.length}</div>
+      </div>
+      <div>
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>Visibility Index</div>
+        <div style={{ fontSize: '1.5rem', fontWeight: 500, color: '#fff' }}>
+          {(() => {
+            const sectors = ['Sector 1', 'Sector 2', 'Sector 3', 'Sector 4', 'Sector 5', 'Sector 6', 'Sector 7', 'Sector 8'];
+            const stableSectors = sectors.filter(s => {
+              const status = getSectorHealthStatus(incidents, s);
+              return status.label === 'STABLE' || status.label === 'NOMINAL';
+            }).length;
+            const ratio = (stableSectors / sectors.length) * 100;
+            return ratio.toFixed(0);
+          })()}% 
+          <span style={{ fontSize: '0.875rem', color: 'var(--success)' }}> NOMINAL</span>
         </div>
-        <div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>Visibility Index</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 500, color: '#fff' }}>
-            {(() => {
-              const sectors = ['Sector 1', 'Sector 2', 'Sector 3', 'Sector 4', 'Sector 5', 'Sector 6', 'Sector 7', 'Sector 8'];
-              const stableSectors = sectors.filter(s => {
-                const status = getSectorHealthStatus(incidents, s);
-                return status.label === 'STABLE' || status.label === 'NOMINAL';
-              }).length;
-              const ratio = (stableSectors / sectors.length) * 100;
-              return ratio.toFixed(0);
-            })()}% 
-            <span style={{ fontSize: '0.875rem', color: 'var(--success)' }}> NOMINAL</span>
-          </div>
-        </div>
-        <div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>Allocation Efficiency</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 500, color: '#fff' }}>{allocationEfficiency}%</div>
-        </div>
+      </div>
+      <div>
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.25rem' }}>Allocation Efficiency</div>
+        <div style={{ fontSize: '1.5rem', fontWeight: 500, color: '#fff' }}>{allocationEfficiency}%</div>
+      </div>
+      {!isImmersive && (
         <div style={{ marginLeft: 'auto' }}>
            <button className="btn" style={{ border: '1px solid var(--border-strong)' }}><BarChart2 size={14} /> Full Report</button>
         </div>
+      )}
+    </div>
+  );
+
+  const renderPriorityQueue = (isImmersive) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0', height: '100%', overflowX: 'hidden' }}>
+      {!selectedMission && !selectedIncident ? (
+        <>
+          <div className="pane-header" style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem 1.5rem', background: isImmersive ? 'rgba(0,0,0,0.2)' : 'transparent', position: 'sticky', top: 0, zIndex: 10 }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600, letterSpacing: '0.05em' }}><Activity size={16} /> Strategic Missions</div>
+             <MoreHorizontal size={16} color="var(--text-dim)" />
+          </div>
+          
+          <div className="no-scrollbar" style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', flex: 1, padding: isImmersive ? '0 1rem' : '0' }}>
+            {missions
+              .map((mission, idx) => {
+                const isCritical = mission.strategicPriority > 8;
+                return (
+                  <motion.div 
+                    key={mission.id} 
+                    onClick={() => {
+                      setSelectedMission(mission);
+                      setIsDrillingDown(false);
+                    }}
+                    whileHover={{ x: 4, background: 'rgba(255,255,255,0.03)' }}
+                    whileTap={{ scale: 0.98 }}
+                    style={{ 
+                      padding: '1.25rem 1rem', 
+                      background: 'transparent',
+                      borderBottom: '1px solid rgba(255,255,255,0.03)',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s ease',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      borderRadius: isImmersive ? '12px' : '0',
+                      marginTop: isImmersive ? '0.5rem' : '0'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                         <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {isCritical && (
+                              <motion.div 
+                                animate={{ opacity: [0.4, 1, 0.4] }} 
+                                transition={{ duration: 1.2, repeat: Infinity }}
+                                style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--danger)', boxShadow: '0 0 8px var(--danger)' }} 
+                              />
+                            )}
+                            {mission.name}
+                         </span>
+                         <span style={{ fontSize: '0.625rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                            {mission.count} Active Needs • {mission.primaryNeed} Focus
+                         </span>
+                      </div>
+                      <span style={{ color: isCritical ? '#fff' : 'var(--text-muted)', fontSize: '1rem', fontWeight: 800, fontFamily: 'monospace' }}>
+                        {mission.strategicPriority.toFixed(1)}
+                      </span>
+                    </div>
+                    
+                    <div style={{ width: '100%', height: '2px', background: 'rgba(255,255,255,0.03)', borderRadius: '1px', marginTop: '0.25rem' }}>
+                       <motion.div 
+                         initial={{ width: 0 }}
+                         animate={{ width: `${(mission.strategicPriority/10)*100}%` }}
+                         style={{ height: '100%', background: isCritical ? 'var(--danger)' : 'var(--success)', borderRadius: '1px' }}
+                       />
+                    </div>
+                  </motion.div>
+                )
+              })}
+          </div>
+        </>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', flex: 1, padding: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8125rem' }} 
+            onClick={() => {
+              if (isDrillingDown) {
+                setIsDrillingDown(false);
+              } else {
+                setSelectedMission(null);
+                setSelectedIncident(null);
+              }
+            }}
+          >
+            <ChevronLeft size={14} /> {selectedIncident ? `Back to ${selectedMission?.name || 'Drill Down'}` : isDrillingDown ? `Back to ${selectedMission.name}` : 'Back to Missions'}
+          </div>
+
+          {!isDrillingDown && selectedMission && !selectedIncident && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+               <div>
+                 <h3 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fff', marginBottom: '0.5rem' }}>{selectedMission.name} Mission</h3>
+                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                       {selectedMission.count} Beneficiaries
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                       Priority Score: <span style={{ color: '#fff', fontWeight: 700 }}>{selectedMission.strategicPriority.toFixed(2)}</span>
+                    </div>
+                 </div>
+               </div>
+
+               <div className="pane" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '1rem', letterSpacing: '0.05em' }}>Cluster Composition</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                     {Object.entries(selectedMission.categories).map(([cat, count]) => (
+                       <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>{cat}</span>
+                          <span style={{ fontSize: '0.8125rem', color: '#fff', fontWeight: 600 }}>{count}</span>
+                       </div>
+                     ))}
+                  </div>
+               </div>
+
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', height: '3.5rem' }}>
+                     <Zap size={16} /> Bulk Hub Dispatch
+                  </button>
+                  <button 
+                    className="btn" 
+                    onClick={() => setIsDrillingDown(true)}
+                    style={{ width: '100%', justifyContent: 'center', border: '1px solid var(--border-subtle)', height: '3rem' }}
+                  >
+                     <List size={14} /> Drill Down to Individuals
+                  </button>
+               </div>
+            </div>
+          )}
+
+          {isDrillingDown && selectedMission && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+               <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '1rem' }}>
+                  Individual Reports: {selectedMission.name}
+               </div>
+               <div className="no-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', padding: isImmersive ? '0 0.5rem' : '0' }}>
+                 {selectedMission.incidents
+                   .sort((a,b) => b.severity - a.severity)
+                   .map((inc, idx) => (
+                   <motion.div 
+                     key={inc._id || inc.id} 
+                     onClick={() => {
+                       setSelectedIncident(inc);
+                       setIsDrillingDown(false);
+                     }}
+                     whileHover={{ background: 'rgba(255,255,255,0.05)', scale: 1.01 }}
+                     whileTap={{ scale: 0.98 }}
+                     style={{ 
+                       padding: '1.25rem', 
+                       borderRadius: '12px', 
+                       border: '1px solid rgba(255,255,255,0.05)',
+                       background: 'rgba(255,255,255,0.02)',
+                       cursor: 'pointer',
+                       transition: 'all 0.2s ease'
+                     }}
+                   >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                         <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#fff' }}>{inc.title}</span>
+                         <span style={{ fontSize: '0.75rem', fontWeight: 800, color: inc.severity > 8 ? 'var(--danger)' : 'var(--text-dim)', fontFamily: 'monospace' }}>SEV: {inc.severity}</span>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between' }}>
+                         <span>ID: {inc._id?.slice(-6) || inc.id}</span>
+                         <span>{timeAgo(inc.createdAt)}</span>
+                      </div>
+                   </motion.div>
+                 ))}
+               </div>
+            </div>
+          )}
+
+          {selectedIncident && !isDrillingDown && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem', color: '#fff' }}>{selectedIncident.title}</h3>
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.8125rem', marginBottom: '2rem' }}>Priority ID: IMP-{selectedIncident._id?.slice(-6) || selectedIncident.id}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                 <ImpactSimulator incident={selectedIncident} />
+                 <ActionCenter incident={selectedIncident} onDispatch={onDispatch} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ padding: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', background: isImmersive ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)', marginTop: 'auto' }}>
+         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.625rem', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '1.25rem', letterSpacing: '0.1em' }}>
+            <Cpu size={12} color="var(--success)" /> Live AI Intelligence Feed
+         </div>
+         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {[
+              { time: '14:02', msg: 'Gemini structured paper survey from Sector 4' },
+              { time: '14:03', msg: 'Divergence detected in Medical Supply vs Need' },
+              { time: '14:05', msg: 'Lateral shift recommended: Sector 2 → Sector 5' }
+            ].map((log, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem' }}>
+                 <span style={{ color: 'var(--text-dim)', fontFamily: 'monospace' }}>[{log.time}]</span>
+                 <span style={{ color: idx === 0 ? '#fff' : 'rgba(255,255,255,0.4)' }}>{log.msg}</span>
+              </div>
+            ))}
+         </div>
+      </div>
+    </div>
+  );
+
+  if (viewMode === 'immersive') {
+    return (
+      <div style={{ position: 'relative', width: '100%', minHeight: 'calc(100vh - 4rem)', pointerEvents: 'none' }}>
+        {/* Floating Stats */}
+        <div style={{ position: 'absolute', top: '2rem', left: '0', pointerEvents: 'auto', background: 'rgba(25, 25, 25, 0.4)', backdropFilter: 'blur(32px)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', padding: '1.25rem 2.5rem', boxShadow: '0 16px 40px rgba(0,0,0,0.6)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.625rem', color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: '1rem' }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 8px var(--success)' }} />
+            Gemini 2.5 Engine
+          </div>
+          {renderStats(true)}
+        </div>
+
+        {/* Floating Queue Sidebar */}
+        <div style={{ position: 'absolute', top: '2rem', right: '0', bottom: '2rem', width: '420px', pointerEvents: 'auto', background: 'rgba(25, 25, 25, 0.4)', backdropFilter: 'blur(32px)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '-8px 16px 40px rgba(0,0,0,0.6)', overflow: 'hidden' }}>
+          {renderPriorityQueue(true)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1px', background: 'var(--border-subtle)', border: '1px solid var(--border-subtle)', borderRadius: '8px', overflow: 'hidden' }}>
+      <div className="pane" style={{ gridColumn: 'span 12', padding: '1.5rem 2rem' }}>
+        {renderStats(false)}
       </div>
 
-      <div className="pane" style={{ gridColumn: 'span 8', minHeight: '450px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+      <div className="pane" style={{ gridColumn: 'span 8', height: '600px', position: 'relative', display: 'flex', flexDirection: 'column' }}>
         <div className="pane-header">
            <MapIcon size={14} /> Live Resource Allocation Network
         </div>
         <KineticMap 
+          isImmersive={false}
           incidents={incidents} 
           selectedIncident={selectedIncident} 
           activeDispatches={activeDispatches} 
@@ -419,112 +841,26 @@ function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispa
         />
       </div>
 
-      <div className="pane" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: '0' }}>
-        {!selectedIncident ? (
-          <>
-            <div className="pane-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
-               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Activity size={14} /> Priority Queue</div>
-               <MoreHorizontal size={14} color="var(--text-dim)" />
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', margin: '0 -2rem', maxHeight: '450px', overflowY: 'auto' }}>
-              {incidents
-                .map(inc => ({
-                  ...inc,
-                  score: (inc.severity * 0.4 + inc.frequency * 0.2 + inc.resourceGap * 0.3 + inc.timeSensitivity * 0.1)
-                }))
-                .sort((a, b) => b.score - a.score)
-                .slice(0, 50)
-                .map((alert, idx) => {
-                  const score = alert.score.toFixed(1);
-                  const isCritical = alert.score > 8;
-                  return (
-                    <div key={alert._id || alert.id} 
-                      onClick={() => setSelectedIncident(alert)}
-                      style={{ 
-                        padding: '1rem 2rem', 
-                        background: 'transparent',
-                        borderBottom: '1px solid var(--border-subtle)',
-                        borderTop: idx === 0 ? '1px solid var(--border-subtle)' : 'none',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.5rem'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-pane-hover)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                           {isCritical && (
-                             <motion.div 
-                               animate={{ opacity: [0.4, 1, 0.4] }} 
-                               transition={{ duration: 1.2, repeat: Infinity }}
-                               style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--danger)', boxShadow: '0 0 6px var(--danger)' }} 
-                             />
-                           )}
-                           {alert.title}
-                        </span>
-                        <span style={{ color: isCritical ? '#fff' : 'var(--text-muted)', fontSize: '0.875rem', fontFamily: 'monospace' }}>{score}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{timeAgo(alert.createdAt)}</span>
-                         <ChevronRight size={14} color="var(--text-dim)" />
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
-          </>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '550px', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8125rem' }} onClick={() => setSelectedIncident(null)}>
-              <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} /> Back to Queue
-            </div>
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem', color: '#fff' }}>{selectedIncident.title}</h3>
-            <div style={{ color: 'var(--text-dim)', fontSize: '0.8125rem', marginBottom: '2rem' }}>Priority ID: IMP-{selectedIncident._id?.slice(-6) || selectedIncident.id}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-               <ImpactSimulator incident={selectedIncident} />
-               <ActionCenter incident={selectedIncident} onDispatch={onDispatch} />
-            </div>
-          </div>
-        )}
-        <div style={{ padding: '1.5rem 2rem', borderTop: '1px solid var(--border-subtle)', background: 'rgba(0,0,0,0.2)', marginTop: 'auto' }}>
-           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.625rem', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '1rem' }}>
-              <Cpu size={10} color="var(--success)" /> Live AI Ingestion Feed
-           </div>
-           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {[
-                { time: '14:02', msg: 'Gemini structured paper survey from Sector 4' },
-                { time: '14:03', msg: 'Divergence detected in Medical Supply vs Need' },
-                { time: '14:05', msg: 'Lateral shift recommended: Sector 2 → Sector 5' }
-              ].map((log, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem' }}>
-                   <span style={{ color: 'var(--text-dim)', fontFamily: 'monospace' }}>[{log.time}]</span>
-                   <span style={{ color: idx === 0 ? '#fff' : 'rgba(255,255,255,0.4)' }}>{log.msg}</span>
-                </div>
-              ))}
-           </div>
-        </div>
+      <div className="pane" style={{ gridColumn: 'span 4', height: '600px', display: 'flex', flexDirection: 'column', gap: '0' }}>
+        {renderPriorityQueue(false)}
       </div>
     </div>
   );
 }
 
-function AnalysisTab({ incidents }) {
+function AnalysisTab({ incidents, volunteers }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
        <div style={{ padding: '0 1rem', display: 'flex', gap: '0.75rem', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
           <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success)' }} />
           Multi-Sector Intelligence Synchronized
        </div>
-       <SectorPulseBoard incidents={incidents} />
+       <SectorPulseBoard incidents={incidents} volunteers={volunteers} />
        <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
           <MisallocationRadar incidents={incidents} />
           <AIGlobalAdvisory incidents={incidents} />
        </div>
-       <RedeploymentStrategy incidents={incidents} />
+       <RedeploymentStrategy incidents={incidents} volunteers={volunteers} />
     </div>
   );
 }
@@ -544,7 +880,7 @@ function IngestionTab({ onIngest, isIngesting, setIsIngesting }) {
       }
     } catch (error) {
       console.error("Ingestion failed:", error);
-      alert("AI Extraction failed. Please ensure your API key is valid.");
+      alert(`AI Extraction failed: ${error.message || "Please ensure your API key is valid."}`);
     } finally {
       setIsIngesting(false);
     }
@@ -570,6 +906,22 @@ function IngestionTab({ onIngest, isIngesting, setIsIngesting }) {
 
 function AIRadarTab({ clusters, incidents }) {
   const hotspots = clusters.hotspots || [];
+  const [anomalyReport, setAnomalyReport] = useState(null);
+  const [isScanning, setIsScanning] = useState(false);
+
+  // Manual Trigger: Definitively kills rate-limit looping by putting control in the user's hands
+  const triggerScan = async () => {
+    setIsScanning(true);
+    if (hotspots.length === 0) {
+      setAnomalyReport("Network Integrity Optimal.\nNo significant spatial anomalies detected outside of known clusters in the current time-window.");
+      setIsScanning(false);
+      return;
+    }
+    const report = await getNetworkAnomalyAnalysis(hotspots);
+    setAnomalyReport(report);
+    setIsScanning(false);
+  };
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
       <div className="pane">
@@ -582,21 +934,62 @@ function AIRadarTab({ clusters, incidents }) {
             {hotspots.slice(0, 5).map((c, i) => (
                <div key={i} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ fontSize: '0.8125rem', color: '#fff' }}>Hotspot Cluster #{c.cluster}</span>
+                    <span style={{ fontSize: '0.8125rem', color: '#fff' }}>{c.name || `Hotspot Cluster #${c.cluster}`}</span>
                     <span style={{ fontSize: '0.8125rem', color: 'var(--error)' }}>Intensity: {c.avgSeverity?.toFixed(1) || 'N/A'}</span>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Centroid: {c.lat?.toFixed(4)}, {c.lng?.toFixed(4)} ({c.count} incidents)</div>
                </div>
             ))}
+            {hotspots.length === 0 && (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8125rem', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
+                No significant clusters detected. Awaiting more tactical data...
+              </div>
+            )}
           </div>
         </div>
       </div>
       <div className="pane" style={{ background: 'linear-gradient(180deg, var(--bg-pane) 0%, rgba(20,20,20,0.8) 100%)' }}>
           <div className="pane-header"><Zap size={14} /> Anomaly Detection</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '4rem', textAlign: 'center' }}>
-             <ShieldCheck size={48} color="var(--success)" style={{ marginBottom: '1.5rem', opacity: 0.5 }} />
-             <h3 style={{ color: '#fff', marginBottom: '0.5rem' }}>Network Integrity Optimal</h3>
-             <p style={{ color: 'var(--text-dim)', fontSize: '0.8125rem' }}>No significant spatial anomalies detected outside of known clusters in the current time-window.</p>
+             {isScanning ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
+                   <div style={{ position: 'relative' }}>
+                      <motion.div 
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+                        style={{ width: '60px', height: '60px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.05)', borderTopColor: 'var(--success)' }}
+                      />
+                      <Zap size={20} color="var(--success)" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }} />
+                   </div>
+                   <span style={{ color: 'var(--text-dim)', fontSize: '0.8125rem', letterSpacing: '0.05em' }}>RUNNING NEURAL SCAN...</span>
+                </div>
+             ) : (
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                   <ShieldCheck size={48} color={!anomalyReport ? 'var(--text-dim)' : anomalyReport.toLowerCase().includes('optimal') ? 'var(--success)' : 'var(--warning)'} style={{ marginBottom: '1.5rem', opacity: 0.7 }} />
+                   
+                   {!anomalyReport ? (
+                      <h3 style={{ color: 'var(--text-dim)', fontSize: '0.875rem', fontWeight: 400 }}>AI Scanner Offline. Awaiting manual trigger.</h3>
+                   ) : (
+                      anomalyReport.split('\n').map((line, idx) => (
+                        <h3 key={idx} style={{ 
+                           color: idx === 0 ? '#fff' : 'var(--text-dim)', 
+                           marginBottom: '0.5rem',
+                           fontSize: idx === 0 ? '1.125rem' : '0.875rem',
+                           fontWeight: idx === 0 ? 600 : 400
+                        }}>{line}</h3>
+                      ))
+                   )}
+
+                   <button 
+                     onClick={triggerScan} 
+                     style={{ marginTop: '2rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                     onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                     onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                   >
+                     <Zap size={14} /> Scan Data Stream
+                   </button>
+                </motion.div>
+             )}
           </div>
       </div>
     </div>
@@ -649,7 +1042,6 @@ function BeneficiariesTab({ beneficiaries = [], onView }) {
         range.push(i);
       }
     }
-
     const finalRange = [];
     let l;
     for (let i of range) {

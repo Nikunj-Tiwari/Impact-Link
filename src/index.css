@@ -197,10 +197,31 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Custom Scrollbar */
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border-focus); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-brand); }
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.glass-card {
+  background: rgba(15, 15, 20, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.no-layout-shift {
+  overflow-x: hidden;
+  max-width: 100%;
+}
 
 /* Google Maps Custom Styling for Premium Look */
 .gm-style {
@@ -403,3 +424,39 @@ input[type="range"]::-webkit-slider-thumb {
   letter-spacing: 0.05em;
 }
 
+
+.metric-input {
+  transition: all 0.2s ease;
+}
+
+.metric-input:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.metric-input:focus {
+  background: rgba(99, 102, 241, 0.05) !important;
+  border-color: var(--accent-brand) !important;
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
+}
+
+/* Chrome, Safari, Edge, Opera */
+.metric-input::-webkit-outer-spin-button,
+.metric-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+.metric-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+/* Project Selector Hover Actions */
+.group:hover .project-actions {
+  opacity: 1 !important;
+}
+
+.project-actions {
+  transition: opacity 0.2s ease;
+}

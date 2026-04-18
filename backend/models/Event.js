@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const eventSchema = new mongoose.Schema({
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null }, // Nullable for global/legacy events
   beneficiaryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Beneficiary', default: null }, // Nullable for general area events
   locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null },
   eventType: { type: String, default: 'General' }, // e.g. "Health Check", "Relief Delivery", "Utility Failure"

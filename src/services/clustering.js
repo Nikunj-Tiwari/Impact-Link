@@ -100,7 +100,7 @@ export const aggregateClusters = (points, labels) => {
     if (p.cluster === null || p.cluster === -1) return;
     
     if (!clustersMap[p.cluster]) {
-      clustersMap[p.cluster] = { cluster: p.cluster, lat: 0, lng: 0, severity: 0, count: 0, points: [] };
+      clustersMap[p.cluster] = { cluster: p.cluster, lat: 0, lng: 0, severity: 0, count: 0, points: [], locations: {} };
     }
     
     const c = clustersMap[p.cluster];
@@ -109,6 +109,9 @@ export const aggregateClusters = (points, labels) => {
     
     if (isNaN(lat) || isNaN(lng)) return;
 
+    const locName = p.location || p.city || 'Unknown Zone';
+    c.locations[locName] = (c.locations[locName] || 0) + 1;
+
     c.lat += lat;
     c.lng += lng;
     c.severity += (parseFloat(p.severity) || 5);
@@ -116,12 +119,16 @@ export const aggregateClusters = (points, labels) => {
     c.points.push(p.id || p._id);
   });
 
-  const hotspots = Object.values(clustersMap).map(c => ({
-    ...c,
-    lat: c.lat / c.count,
-    lng: c.lng / c.count,
-    avgSeverity: c.severity / c.count
-  }));
+  const hotspots = Object.values(clustersMap).map(c => {
+    const dominantLoc = Object.keys(c.locations).sort((a,b) => c.locations[b] - c.locations[a])[0];
+    return {
+      ...c,
+      name: dominantLoc,
+      lat: c.lat / c.count,
+      lng: c.lng / c.count,
+      avgSeverity: c.severity / c.count
+    };
+  });
 
   // Sort hotspots by impact (severity * count) and take top ones for cleaner UI
   const filteredHotspots = hotspots

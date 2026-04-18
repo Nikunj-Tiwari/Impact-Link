@@ -24,7 +24,14 @@ export default function LandingPage() {
   const [currentTourStep, setCurrentTourStep] = useState(-1); // -1 = closed
   const [infoModal, setInfoModal] = useState(null); // 'privacy', 'license', 'about', 'docs', 'faq'
   const [currentUser, setCurrentUser] = useState(null);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const navigate = useNavigate();
+
+  const backgroundVideoPlaylist = [
+    "/volunteer_demo_video.mp4",
+    "/volunteer_demo_video_2.mp4",
+    "/volunteer_demo_video_3.mp4"
+  ];
 
   useEffect(() => {
     if (!auth) return;
@@ -149,6 +156,21 @@ export default function LandingPage() {
           )}
         </div>
       </nav>
+
+      {/* Decorative Video Background */}
+      <div className="landing-bg-video-wrapper">
+        <video 
+          key={backgroundVideoPlaylist[currentVideoIndex]}
+          autoPlay 
+          muted 
+          playsInline 
+          onEnded={() => setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideoPlaylist.length)}
+          className="landing-bg-video"
+        >
+          <source src={backgroundVideoPlaylist[currentVideoIndex]} type="video/mp4" />
+        </video>
+        <div className="landing-bg-video-overlay" />
+      </div>
 
       {/* Hero Section */}
       <header className="hero-section">

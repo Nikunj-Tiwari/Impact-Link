@@ -1,15 +1,17 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(API_KEY);
+// The new SDK uses GoogleGenAI and explicitly accepts the apiKey in the constructor options
+const ai = new GoogleGenAI({ apiKey: API_KEY });
+
+// Using the newest supported multimodal endpoint
+const MODEL_ID = "gemini-2.5-flash";
 
 /**
  * Gemini OCR Layer (Vision)
  * Extracts structured JSON from image of a field report.
  */
 export async function extractDataFromReport(imageFile) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   const prompt = `
     Analyze this field report image. This could be a handwritten paper survey, a printed NGO campaign report, or notes from a mobile aid team. 
     Your goal is to extract structured data to identify **resource misallocation**—where needs are high but local aid is fragmented or missing.
@@ -28,18 +30,52 @@ export async function extractDataFromReport(imageFile) {
     Return ONLY valid JSON.
   `;
 
-
   try {
     const imageData = await fileToGenerativePart(imageFile);
-    const result = await model.generateContent([prompt, imageData]);
-    const response = await result.response;
-    const text = response.text();
     
-    // Simple JSON extraction regex in case of markdown wrapping
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            imageData
+          ]
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+    
+    // Log the full response for debugging
+    console.info("Gemini Raw Response:", response.text);
+    
+    let text = response.text;
+    
+    if (!text) {
+      throw new Error("Gemini returned an empty response. The image might be unreadable or contain restricted content.");
+    }
+
+    // Clean up any potential markdown code blocks returned despite the mimeType setting
+    text = text.trim();
+    if (text.startsWith('```json')) text = text.substring(7);
+    else if (text.startsWith('```')) text = text.substring(3);
+    if (text.endsWith('```')) text = text.substring(0, text.length - 3);
+    text = text.trim();
+    
+    try {
+      return JSON.parse(text);
+    } catch (parseError) {
+      console.error("Gemini JSON Parsing Error on text:", text);
+      throw new Error("AI returned malformed data. Please try again.");
+    }
   } catch (error) {
     console.error("Gemini Vision Error:", error);
+    if (error.message?.includes("API key")) {
+      throw new Error("Invalid Gemini API Key. Please check your .env.local configuration.");
+    }
     throw error;
   }
 }
@@ -49,8 +85,6 @@ export async function extractDataFromReport(imageFile) {
  * Generates tactical advice based on mathematical scores.
  */
 export async function getStrategicAdvice(incidentData, priorityScore) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   const prompt = `
     As a disaster relief strategist focusing on Indian regional impact, analyze this incident:
     Location: ${incidentData.location}
@@ -67,9 +101,11 @@ export async function getStrategicAdvice(incidentData, priorityScore) {
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: prompt
+    });
+    return response.text;
   } catch (error) {
     console.error("Gemini Reasoning Error:", error);
     throw error;
@@ -80,8 +116,6 @@ export async function getStrategicAdvice(incidentData, priorityScore) {
  * Gemini Strategic Reasoning Layer (Global)
  */
 export async function getGlobalStrategicAdvice(incidents) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   const incidentSummary = incidents.map(inc => 
     `${inc.location}: ${inc.needType} (Severity ${inc.severity}, Gap ${inc.resourceGap})`
   ).join('\n');
@@ -100,9 +134,11 @@ export async function getGlobalStrategicAdvice(incidents) {
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: prompt
+    });
+    return response.text;
   } catch (error) {
     console.error("Gemini Global Reasoning Error:", error);
     throw error;
@@ -114,8 +150,6 @@ export async function getGlobalStrategicAdvice(incidents) {
  * Converts a text description into a structured incident object.
  */
 export async function smartParseIncident(text) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   const prompt = `
     Analyze this text from the field in India: "${text}"
     
@@ -132,9 +166,11 @@ export async function smartParseIncident(text) {
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const jsonText = response.text();
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: prompt
+    });
+    const jsonText = response.text;
     const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
     return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
   } catch (error) {
@@ -148,8 +184,6 @@ export async function smartParseIncident(text) {
  * Provides a 1-sentence justification for a specific responder match.
  */
 export async function getMatchReasoning(responder, incident) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   const prompt = `
     Briefly explain why ${responder.name} is a strong match for this ${incident.needType} incident.
     Reasoning factors: Reliability (${responder.reliability}), Proximity (${responder.distanceVal.toFixed(1)}km), and Skill (${responder.skill}).
@@ -157,9 +191,11 @@ export async function getMatchReasoning(responder, incident) {
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text().trim();
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: prompt
+    });
+    return response.text.trim();
   } catch (error) {
     return "Prioritized based on multi-factor proximity and skill matching.";
   }
@@ -170,8 +206,6 @@ export async function getMatchReasoning(responder, incident) {
  * Projects the outcome of assigning N volunteers to an incident.
  */
 export async function getImpactSimulation(incident, volunteerCount) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   const prompt = `
     Analyze the impact of deploying ${volunteerCount} volunteers to this disaster incident in India:
     Location: ${incident.location}
@@ -188,13 +222,119 @@ export async function getImpactSimulation(incident, volunteerCount) {
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const jsonMatch = response.text().match(/\{.*\}/s);
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: prompt
+    });
+    const jsonMatch = response.text.match(/\{.*\}/s);
     return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
   } catch (error) {
     console.error("Simulation Error:", error);
     return null;
+  }
+}
+
+/**
+ * Gemini Temporal Orchestration
+ * Converts natural language description into structured mission phases and dates.
+ * Designed to be highly inferential: even vague input results in a logical fallback timeline.
+ */
+export async function generateTimelinePhases(description) {
+  const prompt = `
+    Analyze this mission orchestration request: "${description}"
+    Current Date: ${new Date().toISOString().split('T')[0]} (YYYY-MM-DD)
+    
+    Task: Extract or infer a logical 3-5 phase operational timeline and determine the overall project dates.
+    
+    Robustness Rules:
+    1. If the input is vague (e.g., "help", "do something fast", "rapid deployment"), INFER a standard high-impact relief cycle: 
+       - Phase 1: Rapid Assessment (3 days)
+       - Phase 2: Emergency Distribution (14 days)
+       - Phase 3: Post-Impact Monitoring (10 days)
+    2. If no start date is mentioned, use the Current Date.
+    3. Calculate the endDate by summing all phase durations from the startDate.
+    4. ONLY if the input is completely off-topic (e.g. asking for a recipe, jokes, or code unrelated to missions), set "isOffTopic" to true.
+    
+    Return ONLY a valid JSON object: 
+    { 
+      "startDate": "YYYY-MM-DD", 
+      "endDate": "YYYY-MM-DD", 
+      "phases": [{ "name": string, "durationDays": number }],
+      "isOffTopic": boolean
+    }
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+    
+    let text = response.text.trim();
+    if (text.startsWith('```json')) text = text.substring(7);
+    else if (text.startsWith('```')) text = text.substring(3);
+    if (text.endsWith('```')) text = text.substring(0, text.length - 3);
+    
+    const data = JSON.parse(text);
+    return data;
+  } catch (error) {
+    console.error("Gemini Timeline Generation Error:", error);
+    // Ultimate fallback for technical failures
+    return {
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      phases: [
+        { name: "Emergency Response Initiation", durationDays: 7 },
+        { name: "Sustained Aid Distribution", durationDays: 21 }
+      ],
+      isOffTopic: false
+    };
+  }
+}
+
+/**
+ * AI Insight: Network Anomaly Detection
+ * Analyzes DBSCAN clusters to find anomalies, critical imbalances, or infrastructure gaps.
+ */
+export async function getNetworkAnomalyAnalysis(clusters) {
+  const hotspotDesc = clusters.map(c => 
+    `Location Hub: ${c.name || `Cluster #${c.cluster}`} - ${c.count} incidents, avg severity ${c.avgSeverity.toFixed(1)}`
+  ).join('\n');
+
+  const prompt = `
+    Analyze these DBSCAN hotspot clusters from our disaster response network in India:
+    
+    ${hotspotDesc}
+
+    Task:
+    Perform an "Anomaly Detection" scan. Identify if there is a severe anomaly (e.g. one cluster having vastly more incidents or disproportionately high severity compared to others).
+    Provide a concise 2-sentence tactical report. 
+    1st sentence: State the integrity status (e.g., "Network Integrity Compromised" or "Network Integrity Optimal").
+    2nd sentence: Describe the anomaly in operational terms.
+    Keep it strictly professional and urgent.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_ID,
+      contents: prompt
+    });
+    return response.text;
+  } catch (error) {
+    console.error("Gemini Anomaly Detection Error:", error);
+    
+    if (error.message && (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('quota'))) {
+      return "Network Scan Paused.\nFree tier API rate limit reached. Please wait 30 seconds before rescanning.";
+    }
+    
+    if (error.message && error.message.includes('503')) {
+      return "Cloud Engine Overloaded.\nGoogle's Gemini 1.5 Flash models are currently experiencing high global demand. Please try scanning again shortly.";
+    }
+
+    return "Network Integrity Unknown.\nFailed to fetch live AI anomaly scan due to regional API latency.";
   }
 }
 

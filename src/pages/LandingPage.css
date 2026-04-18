@@ -135,6 +135,40 @@
   margin-bottom: 2px;
 }
 
+/* Background Video Effects */
+.landing-bg-video-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.landing-bg-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.45; /* Increased aesthetic visibility */
+  /* filter: saturate(0) contrast(1.2); Removed to keep natural colors */
+}
+
+.landing-bg-video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(0, 0, 0, 0.4) 40%,
+    rgba(0, 0, 0, 1) 100%
+  );
+}
+
 /* Hero Section */
 .hero-section {
   padding: 10rem 2rem 4rem 2rem;

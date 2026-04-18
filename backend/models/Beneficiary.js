@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const beneficiarySchema = new mongoose.Schema({
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null }, // Nullable for global/legacy events
   firstName: { type: String, required: true }, // Encrypted at rest (logic handled in service)
   lastName: { type: String, required: true },
   age: { type: Number, required: true, min: 0, max: 120 },

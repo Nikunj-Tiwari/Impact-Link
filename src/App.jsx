@@ -4,10 +4,13 @@ import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 
+import { ProjectProvider } from './context/ProjectContext';
+
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <ProjectProvider>
+      <BrowserRouter>
+        <Routes>
         {/* Public Entry Point */}
         <Route path="/" element={<LandingPage />} />
         
@@ -24,7 +27,8 @@ function App() {
         {/* Catch-all Redirect */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ProjectProvider>
   );
 }
 
