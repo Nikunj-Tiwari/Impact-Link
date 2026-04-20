@@ -56,6 +56,18 @@ const projectSchema = new mongoose.Schema({
     default: 'manual' 
   },
 
+  allocationStrategy: {
+    type: String,
+    enum: ['ai', 'manual'],
+    default: 'ai'
+  },
+
+  assignedRoster: [{
+    volunteerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Volunteer' },
+    regionIndex: { type: Number },
+    type: { type: String, enum: ['local', 'travel'] }
+  }],
+
   // Mission Metadata
   metadata: {
     priority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },

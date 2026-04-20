@@ -24,6 +24,7 @@ import {
   Package
 } from 'lucide-react';
 import BeneficiaryModal from '../components/Modals/BeneficiaryModal';
+import VolunteerModal from '../components/Modals/VolunteerModal';
 import ResourceLogisticsTab from '../components/Resources/ResourceLogisticsTab';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -147,6 +148,8 @@ export default function Dashboard() {
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
+  const [selectedVolunteer, setSelectedVolunteer] = useState(null);
+  const [isVolunteerDetailOpen, setIsVolunteerDetailOpen] = useState(false);
   const [isProjectWizardOpen, setIsProjectWizardOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
 
@@ -496,7 +499,10 @@ export default function Dashboard() {
               setSelectedBeneficiary(b);
               setIsViewOpen(true);
             }} />}
-            {activeTab === 'volunteers' && <VolunteersTab volunteers={volunteers} />}
+            {activeTab === 'volunteers' && <VolunteersTab volunteers={volunteers} onView={(v) => {
+              setSelectedVolunteer(v);
+              setIsVolunteerDetailOpen(true);
+            }} />}
             {activeTab === 'ingestion' && <IngestionTab onIngest={handleIngestion} isIngesting={isIngesting} setIsIngesting={setIsIngesting} />}
           </motion.div>
         </AnimatePresence>
@@ -534,6 +540,15 @@ export default function Dashboard() {
         }} 
         mode="VIEW"
         initialData={selectedBeneficiary}
+      />
+
+      <VolunteerModal 
+        isOpen={isVolunteerDetailOpen} 
+        onClose={() => {
+          setIsVolunteerDetailOpen(false);
+          setSelectedVolunteer(null);
+        }} 
+        initialData={selectedVolunteer}
       />
 
       <WorkspaceModal 
@@ -1168,6 +1183,7 @@ function BeneficiariesTab({ beneficiaries = [], onView }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-strong)', textAlign: 'left', color: 'var(--text-dim)' }}>
+              <th style={{ padding: '1rem', fontWeight: 500, width: '40px' }}>#</th>
               <th style={{ padding: '1rem', fontWeight: 500 }}>Name</th>
               <th style={{ padding: '1rem', fontWeight: 500 }}>Age/Gender</th>
               <th style={{ padding: '1rem', fontWeight: 500 }}>Location</th>
@@ -1177,8 +1193,11 @@ function BeneficiariesTab({ beneficiaries = [], onView }) {
             </tr>
           </thead>
           <tbody>
-            {currentItems.length > 0 ? currentItems.map(b => (
+            {currentItems.length > 0 ? currentItems.map((b, idx) => (
               <tr key={b._id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '1rem', color: 'var(--text-dim)', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                   {(currentPage - 1) * itemsPerPage + idx + 1}
+                </td>
                 <td style={{ padding: '1rem', color: '#fff' }}>{b.firstName} {b.lastName}</td>
                 <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{b.age} / {b.gender}</td>
                 <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{b.locationId?.name || 'Unknown Hub'}</td>
@@ -1215,33 +1234,220 @@ function BeneficiariesTab({ beneficiaries = [], onView }) {
   );
 }
 
-function VolunteersTab({ volunteers }) {
+function VolunteersTab({ volunteers = [], onView }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const itemsPerPage = 15;
+
+  // 1. Filtering Logic (Memoized)
+  const filteredItems = useMemo(() => {
+    if (!volunteers) return [];
+    return volunteers.filter(v => {
+      if (!v) return false;
+      const name = v.name || '';
+      const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter === 'ALL' || v.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [volunteers, searchTerm, statusFilter]);
+
+  // 2. Reset back to page 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  // 3. Pagination Logic
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / itemsPerPage));
+  const currentItems = filteredItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const [jumpVal, setJumpVal] = useState('');
+  const [activeJump, setActiveJump] = useState(null);
+
+  const getRange = () => {
+    const delta = 2;
+    const range = [];
+    const left = currentPage - delta;
+    const right = currentPage + delta + 1;
+    
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= left && i < right)) {
+        range.push(i);
+      }
+    }
+    const finalRange = [];
+    let l;
+    for (let i of range) {
+      if (l) {
+        if (i - l === 2) {
+          finalRange.push(l + 1);
+        } else if (i - l !== 1) {
+          finalRange.push('...');
+        }
+      }
+      finalRange.push(i);
+      l = i;
+    }
+    return finalRange;
+  };
+
+  const handleJump = (e) => {
+    if (e.key === 'Enter') {
+      const p = parseInt(jumpVal);
+      if (p >= 1 && p <= totalPages) {
+        setCurrentPage(p);
+        setActiveJump(null);
+        setJumpVal('');
+      }
+    } else if (e.key === 'Escape') {
+      setActiveJump(null);
+      setJumpVal('');
+    }
+  };
+
+  const renderPagination = (pos) => (
+    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+      <button className="btn" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', opacity: currentPage === 1 ? 0.3 : 1 }}>Prev</button>
+      
+      {getRange().map((n, idx) => {
+        if (n === '...') {
+          const jumpId = `${pos}-${idx}`;
+          const isThisJumping = activeJump === jumpId;
+          return isThisJumping ? (
+            <input 
+              key={`jump-input-${jumpId}`}
+              type="text"
+              autoFocus
+              placeholder="Pg"
+              value={jumpVal}
+              onChange={(e) => setJumpVal(e.target.value)}
+              onKeyDown={handleJump}
+              onBlur={() => {
+                setTimeout(() => setActiveJump(null), 200);
+              }}
+              style={{ width: '40px', background: 'rgba(255,255,255,0.1)', border: '1px solid var(--accent-primary)', color: '#fff', fontSize: '0.75rem', padding: '0.2rem', textAlign: 'center', borderRadius: '4px' }}
+            />
+          ) : (
+            <span 
+              key={`dots-${jumpId}`} 
+              onClick={() => {
+                setActiveJump(jumpId);
+                setJumpVal('');
+              }}
+              style={{ color: 'var(--text-dim)', fontSize: '0.75rem', cursor: 'pointer', padding: '0 0.5rem', userSelect: 'none' }}
+              title="Click to jump to page"
+            >...</span>
+          );
+        }
+        return (
+          <button 
+            key={`page-${n}`} 
+            onClick={() => setCurrentPage(n)}
+            className="btn"
+            style={{ 
+              padding: '0.3rem 0.6rem', 
+              fontSize: '0.75rem', 
+              background: currentPage === n ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
+              border: currentPage === n ? 'none' : '1px solid var(--border-subtle)',
+              color: currentPage === n ? '#000' : '#fff'
+            }}
+          >
+            {n}
+          </button>
+        );
+      })}
+
+      <button className="btn" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', opacity: currentPage === totalPages ? 0.3 : 1 }}>Next</button>
+    </div>
+  );
+
   return (
-    <div className="pane" style={{ border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
-      <div className="pane-header" style={{ justifyContent: 'space-between', marginBottom: '2rem' }}>
+    <div className="pane">
+      <div className="pane-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><HandHeart size={14}/> Live Responder Network</div>
-        <button className="btn" style={{ border: '1px solid var(--border-strong)', fontSize: '0.75rem' }}>Onboard</button>
+        
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+             <Search size={12} style={{ position: 'absolute', left: '0.75rem', color: 'var(--text-dim)' }} />
+             <input 
+                type="text" 
+                placeholder="Search responders..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-strong)', borderRadius: '4px', padding: '0.4rem 1rem 0.4rem 2rem', color: '#fff', fontSize: '0.75rem', minWidth: '180px' }}
+             />
+           </div>
+           
+           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+             <Filter size={12} style={{ position: 'absolute', left: '0.75rem', color: 'var(--text-dim)' }} />
+             <select 
+               value={statusFilter} 
+               onChange={(e) => setStatusFilter(e.target.value)}
+               style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-strong)', borderRadius: '4px', padding: '0.4rem 1rem 0.4rem 2rem', color: '#fff', fontSize: '0.75rem', appearance: 'none', cursor: 'pointer' }}
+             >
+               <option value="ALL">All Status</option>
+               <option value="Active">Active</option>
+               <option value="Deployed">Deployed</option>
+             </select>
+           </div>
+
+           {renderPagination('top')}
+        </div>
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--border-strong)', textAlign: 'left', color: 'var(--text-dim)' }}>
-            <th style={{ padding: '1rem', fontWeight: 500 }}>Name</th>
-            <th style={{ padding: '1rem', fontWeight: 500 }}>Status</th>
-            <th style={{ padding: '1rem', fontWeight: 500 }}>Assigned Location</th>
-            <th style={{ padding: '1rem', fontWeight: 500 }}>Capabilities</th>
-          </tr>
-        </thead>
-        <tbody>
-          {volunteers?.map(v => (
-            <tr key={v._id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-              <td style={{ padding: '1rem', color: '#fff' }}>{v.name}</td>
-              <td style={{ padding: '1rem' }}><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: v.status === 'Deployed' ? '#34d399' : '#fff' }}><div style={{ width: '4px', height: '4px', background: v.status === 'Deployed' ? '#34d399' : '#fff', borderRadius: '50%' }}/> {v.status}</div></td>
-              <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{v.locationId?.name || 'Unassigned'}</td>
-              <td style={{ padding: '1rem', color: 'var(--text-dim)', fontSize: '0.75rem' }}>{v.skills?.join(', ') || 'Generalist'}</td>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border-strong)', textAlign: 'left', color: 'var(--text-dim)' }}>
+              <th style={{ padding: '1rem', fontWeight: 500, width: '40px' }}>#</th>
+              <th style={{ padding: '1rem', fontWeight: 500 }}>Name</th>
+              <th style={{ padding: '1rem', fontWeight: 500 }}>Status</th>
+              <th style={{ padding: '1rem', fontWeight: 500 }}>Assigned Location</th>
+              <th style={{ padding: '1rem', fontWeight: 500 }}>Capabilities</th>
+              <th style={{ padding: '1rem', fontWeight: 500, textAlign: 'right' }}>Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {currentItems.length > 0 ? currentItems.map((v, idx) => (
+              <tr key={v._id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '1rem', color: 'var(--text-dim)', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                   {(currentPage - 1) * itemsPerPage + idx + 1}
+                </td>
+                <td style={{ padding: '1rem', color: '#fff' }}>{v.name}</td>
+                <td style={{ padding: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: v.status === 'Deployed' ? '#34d399' : '#fff' }}>
+                    <div style={{ width: '4px', height: '4px', background: v.status === 'Deployed' ? '#34d399' : '#fff', borderRadius: '50%' }}/> 
+                    {v.status}
+                  </div>
+                </td>
+                <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{v.locationId?.name || 'Unassigned Hub'}</td>
+                <td style={{ padding: '1rem', color: 'var(--text-dim)', fontSize: '0.75rem' }}>{v.skills?.join(', ') || 'Generalist'}</td>
+                <td style={{ padding: '1rem', textAlign: 'right' }}>
+                  <button 
+                    onClick={() => onView(v)}
+                    className="btn-icon" 
+                    title="View Profile" 
+                    style={{ background: 'rgba(0, 191, 255, 0.1)', border: '1px solid rgba(0, 191, 255, 0.2)' }}
+                  >
+                    <Eye size={14} color="var(--accent-primary)" />
+                  </button>
+                </td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-dim)' }}>
+                  <Search size={32} style={{ opacity: 0.1, marginBottom: '1rem' }} />
+                  <div>No matching responders found in the registry.</div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-subtle)' }}>
+        {renderPagination('bottom')}
+      </div>
     </div>
   );
 }

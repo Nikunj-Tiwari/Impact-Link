@@ -22,13 +22,15 @@ import Step1Identity from './Step1Identity';
 import Step2Geography from './Step2Geography';
 import Step3Timeline from './Step3Timeline';
 import Step4Personnel from './Step4Personnel';
-import Step5Resources from './Step5Resources';
+import Step5Roster from './Step5Roster'; // NEW
+import Step6Resources from './Step6Resources'; // MOVED
 
 const STEPS = [
   { id: 'identity', title: 'Mission Identity', icon: Target, subtitle: 'Define mission scope and strategy' },
   { id: 'geography', title: 'Geographic Intelligence', icon: MapIcon, subtitle: 'Target specific operational zones' },
   { id: 'timeline', title: 'Temporal Planning', icon: Clock, subtitle: 'Set duration and phase windows' },
   { id: 'personnel', title: 'Human Capital', icon: Users, subtitle: 'Define responder requirements' },
+  { id: 'roster', title: 'Tactical Roster', icon: Check, subtitle: 'Draft specific individuals' },
   { id: 'resources', title: 'Resource Architecture', icon: Package, subtitle: 'Structure hierarchical supplies' }
 ];
 
@@ -40,11 +42,12 @@ export default function ProjectWizard({ onClose, initialData = null }) {
 
   const isEditMode = !!initialData;
 
-  // Unified Form State
-  const [formData, setFormData] = useState(initialData || {
+  // Unified Form State (Hydrated for Legacy Projects)
+  const [formData, setFormData] = useState({
     name: '',
     description: '',
     operatingMode: 'manual',
+    allocationStrategy: 'ai',
     metadata: {
       priority: 'Medium',
       beneficiaryType: '',
@@ -53,29 +56,25 @@ export default function ProjectWizard({ onClose, initialData = null }) {
       notificationsEnabled: true
     },
     scope: 'District',
-    regions: [{
-      center: { lat: 20.5937, lng: 78.9629 }, // Default India center
-      radius: 50,
-      name: ''
-    }],
+    regions: [],
     timeline: {
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
       phases: []
     },
     volunteerTargets: {
-      total: 0,
-      local: 0,
-      travel: 0,
       requiredSkills: []
     },
+    assignedRoster: [], 
     hierarchicalSupplies: [
       { category: 'Food & Water', items: [{ type: 'Basic Rations', unit: 'kits', targetQuantity: 1000 }] },
       { category: 'Medical', items: [{ type: 'First Aid Kits', unit: 'units', targetQuantity: 500 }] }
-    ]
+    ],
+    ...initialData // Merge existing data over defaults
   });
 
   const updateFormData = (stepId, data) => {
+    // Specialized handling for step components that might pass partial data
     setFormData(prev => ({ ...prev, ...data }));
   };
 
@@ -152,7 +151,8 @@ export default function ProjectWizard({ onClose, initialData = null }) {
       case 1: return <Step2Geography data={formData} update={updateFormData} />;
       case 2: return <Step3Timeline data={formData} update={updateFormData} />;
       case 3: return <Step4Personnel data={formData} update={updateFormData} />;
-      case 4: return <Step5Resources data={formData} update={updateFormData} />;
+      case 4: return <Step5Roster data={formData} update={updateFormData} />;
+      case 5: return <Step6Resources data={formData} update={updateFormData} />;
       default: return null;
     }
   };
@@ -211,7 +211,7 @@ export default function ProjectWizard({ onClose, initialData = null }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {STEPS.map((step, idx) => {
-              const isCompleted = idx < currentStep;
+              const isCompleted = !isEditMode && idx < currentStep;
               const isActive = idx === currentStep;
               return (
                 <div 
@@ -220,10 +220,10 @@ export default function ProjectWizard({ onClose, initialData = null }) {
                     padding: '1rem', borderRadius: '12px', border: '1px solid',
                     borderColor: isActive ? 'var(--primary)' : 'transparent',
                     background: isActive ? 'rgba(79, 70, 229, 0.05)' : 'transparent',
-                    display: 'flex', gap: '1rem', cursor: idx <= currentStep ? 'pointer' : 'default',
+                    display: 'flex', gap: '1rem', cursor: (isEditMode || idx <= currentStep) ? 'pointer' : 'default',
                     transition: 'all 0.2s'
                   }}
-                  onClick={() => idx <= currentStep && setCurrentStep(idx)}
+                  onClick={() => (isEditMode || idx <= currentStep) && setCurrentStep(idx)}
                 >
                   <div style={{ 
                     width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,

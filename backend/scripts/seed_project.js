@@ -14,7 +14,7 @@ async function seedCustomProject() {
 
     if (!projectName) {
       console.error('❌ Error: Please provide a project name.');
-      console.log('Usage: node seed_custom_project.js "Your Project Name"');
+      console.log('Usage: node seed_project.js "Your Project Name"');
       process.exit(1);
     }
 
@@ -30,110 +30,125 @@ async function seedCustomProject() {
       process.exit(1);
     }
 
+    if (!project.regions || project.regions.length === 0) {
+      console.error(`❌ Error: Project "${projectName}" has no operational regions defined.`);
+      console.log('Please define at least one region in the Geographical Intelligence stage of the Project Wizard.');
+      process.exit(1);
+    }
+
     console.log(`🚀 Found Project: ${project.name} (${project._id})`);
+    console.log(`📍 Operating across ${project.regions.length} regional zones.`);
     
-    // We wipe existing dummy data FOR THIS PROJECT ONLY to prevent duplicate bloat during multiple tests.
-    // Notice how we scope wiping precisely to project._id
+    // Wipe existing dummy data FOR THIS PROJECT ONLY
     await Event.deleteMany({ projectId: project._id });
     await Beneficiary.deleteMany({ projectId: project._id });
-    // Volunteers are an array, so we must safely pull or delete
-    await Volunteer.deleteMany({ projectIds: project._id }); 
     await Supply.deleteMany({ projectId: project._id });
     
-    console.log(`🧹 Cleared any previous test data scoped specifically to ${project.name}.`);
+    // We UNLINK volunteers from this project instead of deleting them, 
+    // to preserve the "Single Source of Truth" global registry.
+    await Volunteer.updateMany(
+      { projectIds: project._id },
+      { $pull: { projectIds: project._id } }
+    );
+    
+    console.log(`🧹 Mission data cleared for ${project.name}. Global Volunteer Pool preserved.`);
 
-    // 2. We need some Locations! We'll just create a few random ones near central India / generic spots,
-    // or if the user is testing local maps, let's create a cluster in Mumbai/Pune as a sample.
-    const loc1 = await Location.create({ 
-      name: `Camp Alpha (${project.name})`, type: 'Sector', lat: 18.5204, lng: 73.8567
-    });
-    const loc2 = await Location.create({ 
-      name: `Medical Hub (${project.name})`, type: 'Ward', lat: 18.5314, lng: 73.8446
-    });
-
-    // 3. Procedurally generate ~220 Events with varying spatial densities
-    const baseLat = 18.5204 + (Math.random() - 0.5) * 0.1; // Shift epicenter slightly each run
-    const baseLng = 73.8567 + (Math.random() - 0.5) * 0.1;
-
+    const KM_TO_DEG = 0.009; 
     const eventTypes = ['Food Shortage', 'Medical Crisis', 'Infrastructure Damage', 'Water Supply', 'Evacuation Alert'];
     const generatedEvents = [];
+    const regionalLocations = [];
 
-    // Helper to generate events
-    const generateCluster = (count, radius, densityName) => {
-      for (let i = 0; i < count; i++) {
-        // Random offset based on radius
-        const latOffset = (Math.random() - 0.5) * radius * 2;
-        const lngOffset = (Math.random() - 0.5) * radius * 2;
+    // 2. Generate Data per Region
+    for (const region of project.regions) {
+      console.log(`🏗️ Processing Region: ${region.name || 'Untitled Area'}`);
+      
+      const loc = await Location.create({ 
+        name: `${region.name || 'Zone'} - Base Hub`, 
+        type: 'District', 
+        lat: region.center.lat, 
+        lng: region.center.lng 
+      });
+      regionalLocations.push(loc);
+
+      // Generate incidents
+      const incidentCount = Math.floor(Math.random() * 50) + 30;
+      for (let i = 0; i < incidentCount; i++) {
+        const latOffset = (Math.random() - 0.5) * (region.radius * 2 * KM_TO_DEG);
+        const lngOffset = (Math.random() - 0.5) * (region.radius * 2 * KM_TO_DEG);
         
         generatedEvents.push({
           projectId: project._id,
-          locationId: Math.random() > 0.5 ? loc1._id : loc2._id,
+          locationId: loc._id,
           eventType: eventTypes[Math.floor(Math.random() * eventTypes.length)],
           severity: Math.floor(Math.random() * 10) + 1,
           resourceGap: Math.floor(Math.random() * 10) + 1,
           frequency: Math.floor(Math.random() * 10) + 1,
           timeSensitivity: Math.floor(Math.random() * 10) + 1,
-          lat: baseLat + latOffset,
-          lng: baseLng + lngOffset,
-          notes: `Simulated Incident - ${densityName} area.`
+          lat: region.center.lat + latOffset,
+          lng: region.center.lng + lngOffset,
+          notes: `Simulated Incident - ${region.name} zone.`
         });
       }
-    };
 
-    // High Density Cluster (120 cases in a very tight 0.04 coordinate radius)
-    generateCluster(120, 0.04, "High Density");
-    // Medium Density Area (60 cases in a 0.15 radius)
-    generateCluster(60, 0.15, "Medium Density");
-    // Scattered / Low Density (40 cases spread across a wide 0.5 radius)
-    generateCluster(40, 0.5, "Low Density Outliers");
-
-    await Event.insertMany(generatedEvents);
-    console.log(`🗺️ Procedurally mapped ${generatedEvents.length} incidents into dynamically generated spatial clusters.`);
-
-    // 4. Create Volunteers scoped to project
-    await Volunteer.create([
-      { projectIds: [project._id], name: 'Amit Desai', status: 'Deployed', locationId: loc1._id, contactPhone: '+91 9999999991', skills: ['Logistics', 'Crowd Control'] },
-      { projectIds: [project._id], name: 'Dr. Sneha Patil', status: 'Active', locationId: loc2._id, contactPhone: '+91 9999999992', skills: ['Medical', 'Emergency Response'] }
-    ]);
-
-    // 5. Create Beneficiaries scoped to project
-    await Beneficiary.create([
-      { 
-        projectId: project._id, 
-        locationId: loc1._id, 
-        firstName: 'Amit', 
-        lastName: 'Patel', 
-        age: 42, 
-        gender: 'M', 
-        aadharMasked: '5566',
-        consentRecord: true 
-      },
-      { 
-        projectId: project._id, 
-        locationId: loc2._id, 
-        firstName: 'Sita', 
-        lastName: 'Devi', 
-        age: 38, 
-        gender: 'F', 
-        aadharMasked: '1122',
-        consentRecord: true 
+      // Link existing volunteers from the Global Pool to this project
+      // We pick a few volunteers who are "Active" and not currently overloaded
+      const potentialResponders = await Volunteer.find({ status: 'Active' }).limit(5);
+      if (potentialResponders.length > 0) {
+        await Volunteer.updateMany(
+          { _id: { $in: potentialResponders.map(v => v._id) } },
+          { $addToSet: { projectIds: project._id } }
+        );
+        console.log(`🔗 Linked ${potentialResponders.length} elite responders from the Global Pool to ${region.name}.`);
+      } else {
+        // Fallback: Create new global volunteers if the registry is thin
+        await Volunteer.create({ 
+          projectIds: [project._id], 
+          name: `New Recruit (${region.name || 'Zone'})`, 
+          status: 'Active', 
+          locationId: loc._id, 
+          contactPhone: `+91 ${Math.floor(Math.random() * 9000000000) + 1000000000}`, 
+          skills: ['General Response'] 
+        });
       }
-    ]);
 
-    // 6. Create initial supplies based on schema (fallback if project lacks one)
-    if (project.supplySchema && project.supplySchema.length > 0) {
-      const suppliesToCreate = project.supplySchema.map(schema => ({
-        projectId: project._id,
-        type: schema.type,
-        quantity: Math.floor(Math.random() * 500) + 50,
-        location: 'Base Camp'
-      }));
-      await Supply.create(suppliesToCreate);
-      console.log(`📦 Seeded project-specific supplies derived from ${project.name}'s custom schema.`);
+      // Create region-specific beneficiaries
+      await Beneficiary.create({ 
+        projectId: project._id, 
+        locationId: loc._id, 
+        firstName: 'Regional', 
+        lastName: 'Resident', 
+        age: Math.floor(Math.random() * 50) + 18, 
+        gender: Math.random() > 0.5 ? 'M' : 'F', 
+        aadharMasked: Math.floor(1000 + Math.random() * 9000).toString(),
+        consentRecord: true 
+      });
     }
 
-    console.log(`🎉 Successfully seeded test data exclusively into project environment: [${project.name}]!`);
-    console.log('You can now switch to this project in the dashboard and see the isolated data flow.');
+    await Event.insertMany(generatedEvents);
+    console.log(`🎮 Mission Space established with ${generatedEvents.length} incidents.`);
+
+    // 3. Create initial supplies based on hierarchical schema
+    if (project.hierarchicalSupplies && project.hierarchicalSupplies.length > 0) {
+      const suppliesToCreate = [];
+      project.hierarchicalSupplies.forEach(cat => {
+        cat.items.forEach(item => {
+          suppliesToCreate.push({
+            projectId: project._id,
+            type: `${cat.category}: ${item.type}`,
+            quantity: Math.floor(item.targetQuantity * 0.4), // Start with 40% stock
+            location: 'Central Logistics'
+          });
+        });
+      });
+      
+      if (suppliesToCreate.length > 0) {
+        await Supply.insertMany(suppliesToCreate);
+        console.log(`📦 Seeded ${suppliesToCreate.length} supply records derived from project's hierarchical architecture.`);
+      }
+    }
+
+    console.log(`🎉 Project "${project.name}" has been successfully calibrated and synchronized with live test data.`);
+    console.log('You can now verify the spatial clustering on the Mission Dashboard.');
 
   } catch (error) {
     console.error('❌ Seeding failed:', error);

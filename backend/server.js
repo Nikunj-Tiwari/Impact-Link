@@ -170,9 +170,18 @@ app.delete('/api/projects/:id', verifyToken, async (req, res) => {
 // 3. Responders (Volunteers)
 app.get('/api/volunteers', async (req, res) => {
   try {
-    const query = {};
-    if (req.query.projectId) query.projectIds = req.query.projectId;
-    const volunteers = await Volunteer.find(query).populate('locationId');
+    let query = {};
+    
+    if (req.query.projectId) {
+      // Check if this project is 'Global'
+      const project = await Project.findById(req.query.projectId);
+      if (project && project.scope !== 'Global') {
+        query.projectIds = req.query.projectId;
+      }
+      // If project is Global, query remains {} to fetch everyone
+    }
+
+    const volunteers = await Volunteer.find(query).populate('locationId').populate('projectIds');
     res.json(volunteers);
   } catch (error) {
     res.status(500).json({ error: error.message });

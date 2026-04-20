@@ -1,26 +1,113 @@
-import React, { useState } from 'react';
-import { Users, MapPin, Plane, Award, X, ShieldAlert, Target, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, MapPin, Plane, Award, X, ShieldAlert, Target, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { fetchVolunteers } from '../../../services/api';
+import { calculateHaversineDistance } from '../../../services/logic';
 
 export default function Step4Personnel({ data, update }) {
   const [newSkill, setNewSkill] = useState('');
+  const [volunteers, setVolunteers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleTargetChange = (field, value) => {
-    const numValue = Math.max(0, parseInt(value) || 0);
-    const newTargets = { ...data.volunteerTargets, [field]: numValue };
+  useEffect(() => {
+    const loadVolunteers = async () => {
+      try {
+        const list = await fetchVolunteers();
+        setVolunteers(list);
+      } catch (err) {
+        console.error('Failed to load volunteer availability:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadVolunteers();
+  }, []);
+
+  /**
+   * Spatial Analysis Engine
+   * Calculates real-time availability based on region radius and volunteer GPS
+   */
+  const availabilityData = useMemo(() => {
+    if (!volunteers.length) return { regions: {}, mobile: 0 };
+
+    const regionCounts = {};
+    let matchedVolunteers = new Set();
+
+    // 1. Calculate Resident Base for each region
+    data.regions.forEach((region, rIdx) => {
+      const { lat, lng } = region.center;
+      const radius = region.radius;
+      
+      const localResponders = volunteers.filter(v => {
+        const vLat = v.locationId?.lat;
+        const vLng = v.locationId?.lng;
+        if (!vLat || !vLng) return false;
+
+        const dist = calculateHaversineDistance(lat, lng, vLat, vLng);
+        const within = dist <= radius;
+        if (within) matchedVolunteers.add(v._id);
+        return within;
+      });
+
+      regionCounts[rIdx] = localResponders.length;
+    });
+
+    // 2. Calculate Mobile Unit (volunteers outside all selected regions)
+    const mobileResponders = volunteers.filter(v => !matchedVolunteers.has(v._id));
+
+    return {
+      regions: regionCounts,
+      mobile: mobileResponders.length
+    };
+  }, [volunteers, data.regions]);
+
+  const handleTargetChange = (regionIdx, field, value) => {
+    let numValue = Math.max(0, parseInt(value) || 0);
+    const newRegions = [...data.regions];
+    const region = { ...newRegions[regionIdx] };
+    if (!region.volunteerTargets) {
+      region.volunteerTargets = { total: 0, local: 0, travel: 0 };
+    }
+
+    // 1. Strict Capacity Guardrails
+    if (field === 'local') {
+      const maxLocal = availabilityData.regions[regionIdx] || 0;
+      numValue = Math.min(numValue, maxLocal);
+    } else if (field === 'travel') {
+      const totalMobileAvailable = availabilityData.mobile;
+      const otherRegionsTravelTotal = data.regions.reduce((sum, r, idx) => {
+        if (idx === regionIdx) return sum;
+        return sum + (r.volunteerTargets?.travel || 0);
+      }, 0);
+      
+      const headroom = Math.max(0, totalMobileAvailable - otherRegionsTravelTotal);
+      numValue = Math.min(numValue, headroom);
+    }
+
+    const newTargets = { ...region.volunteerTargets, [field]: numValue };
     
     // Auto-sum correlation
     if (field === 'local' || field === 'travel') {
       newTargets.total = newTargets.local + newTargets.travel;
     } else if (field === 'total') {
-      // If total is changed directly, we don't auto-distribute but keep it >= sum of parts
+      // If user edits total, we ensure it's at least the sum of local+travel
       newTargets.total = Math.max(numValue, newTargets.local + newTargets.travel);
     }
 
-    update('personnel', { 
-      volunteerTargets: newTargets 
+    region.volunteerTargets = newTargets;
+    newRegions[regionIdx] = region;
+
+    update('geography', { 
+       regions: newRegions 
     });
   };
+
+  // Calculate Shared Mobile Balance
+  const totalAssignedMobile = useMemo(() => {
+    return data.regions.reduce((sum, r) => sum + (r.volunteerTargets?.travel || 0), 0);
+  }, [data.regions]);
+
+  const remainingMobilePool = Math.max(0, availabilityData.mobile - totalAssignedMobile);
 
   const addSkill = () => {
     if (newSkill && !data.volunteerTargets.requiredSkills.includes(newSkill)) {
@@ -47,45 +134,128 @@ export default function Step4Personnel({ data, update }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '3.5rem' }}>
       {/* Target Taskforce Metrics */}
       <section>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '4rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
           <div>
             <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff', marginBottom: '0.5rem' }}>Taskforce Target Metrics</h3>
             <p style={{ fontSize: '0.8125rem', color: 'var(--text-dim)', lineHeight: '1.6' }}>
-               Define the scale of human capital required. These numbers act as triggers for the AI allocation engine.
+               Define the scale of human capital required per operational zone. These numbers act as triggers for the AI allocation engine.
             </p>
           </div>
+
+          {/* Allocation Strategy Selector */}
+          <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', display: 'flex', gap: '2rem' }}>
+            <div 
+              onClick={() => update('personnel', { allocationStrategy: 'ai' })}
+              style={{ flex: 1, padding: '1.5rem', borderRadius: '12px', border: '1px solid', borderColor: data.allocationStrategy === 'ai' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', background: data.allocationStrategy === 'ai' ? 'rgba(79, 70, 229, 0.05)' : 'transparent', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                <Sparkles size={18} color={data.allocationStrategy === 'ai' ? 'var(--primary)' : 'var(--text-dim)'} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>AI-Driven Optimization</span>
+              </div>
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-dim)', margin: 0 }}>Auto-select top-tier responders based on skill parity and proximity.</p>
+            </div>
+
+            <div 
+              onClick={() => update('personnel', { allocationStrategy: 'manual' })}
+              style={{ flex: 1, padding: '1.5rem', borderRadius: '12px', border: '1px solid', borderColor: data.allocationStrategy === 'manual' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', background: data.allocationStrategy === 'manual' ? 'rgba(79, 70, 229, 0.05)' : 'transparent', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                <Users size={18} color={data.allocationStrategy === 'manual' ? 'var(--primary)' : 'var(--text-dim)'} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>Manual Tactical Drafting</span>
+              </div>
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-dim)', margin: 0 }}>Review individual performance profiles and hand-pick your taskforce.</p>
+            </div>
+          </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
-            {[
-              { label: 'Total', field: 'total', icon: Users, color: 'var(--accent-brand)', desc: 'Absolute Target' },
-              { label: 'Local', field: 'local', icon: MapPin, color: 'var(--success)', desc: 'Resident Base' },
-              { label: 'Travel', field: 'travel', icon: Plane, color: 'var(--accent-tertiary)', desc: 'Mobile Unit' }
-            ].map((item) => (
-              <div key={item.field} style={{ 
-                padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem', 
-                background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: '16px', textAlign: 'center', transition: 'all 0.2s', position: 'relative'
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+            {data.regions.map((region, idx) => (
+              <div key={idx} style={{ 
+                background: 'rgba(255,255,255,0.01)', 
+                border: '1px solid rgba(255,255,255,0.05)', 
+                borderRadius: '24px', 
+                padding: '2rem' 
               }}>
-                 <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                       <item.icon size={20} color={item.color} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--primary-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <MapPin size={20} color="var(--primary)" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                       <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff', margin: 0 }}>{region.name || `Operational Area ${idx + 1}`}</h4>
+                       {isLoading ? (
+                         <Loader2 size={12} className="animate-spin" color="var(--primary)" />
+                       ) : (
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.2rem 0.6rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '100px' }}>
+                            <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--success)' }} />
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--success)' }}>{availabilityData.regions[idx] || 0} Verifiable Responders</span>
+                         </div>
+                       )}
                     </div>
-                 </div>
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                    <input 
-                      type="number" 
-                      min="0"
-                      value={data.volunteerTargets[item.field]}
-                      onChange={(e) => handleTargetChange(item.field, e.target.value)}
-                      className="metric-input"
-                      style={{ 
-                        width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', 
-                        color: '#fff', fontSize: '1.75rem', fontWeight: 800, textAlign: 'center', outline: 'none',
-                        borderRadius: '8px', padding: '0.25rem 0', cursor: 'pointer'
-                      }}
-                    />
-                    <div style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{item.desc}</div>
-                 </div>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>GPS Target: {region.center.lat.toFixed(4)}, {region.center.lng.toFixed(4)}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
+                  {[
+                    { label: 'Total', field: 'total', icon: Users, color: 'var(--accent-brand)', desc: 'Absolute Target' },
+                    { 
+                      label: 'Local', 
+                      field: 'local', 
+                      icon: MapPin, 
+                      color: 'var(--success)', 
+                      desc: 'Resident Base',
+                      availability: availabilityData.regions[idx] || 0
+                    },
+                    { 
+                      label: 'Travel', 
+                      field: 'travel', 
+                      icon: Plane, 
+                      color: 'var(--accent-tertiary)', 
+                      desc: 'Mobile Unit',
+                      availability: remainingMobilePool // Dynamic Shared Pool
+                    }
+                  ].map((item) => (
+                    <div key={item.field} style={{ 
+                      padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem', 
+                      background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+                      borderRadius: '16px', textAlign: 'center', transition: 'all 0.2s', position: 'relative',
+                      boxShadow: (item.availability === 0 && item.field !== 'total') ? 'inset 0 0 40px rgba(239, 68, 68, 0.05)' : 'none'
+                    }}>
+                       {item.field !== 'total' && (
+                         <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <Sparkles size={10} color={item.availability > 0 ? 'var(--primary)' : 'var(--error)'} />
+                            <span style={{ fontSize: '0.6rem', fontWeight: 800, color: item.availability > 0 ? 'var(--text-dim)' : 'var(--error)' }}>
+                               POOL: {item.availability}
+                            </span>
+                         </div>
+                       )}
+                       <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                             <item.icon size={20} color={item.color} />
+                          </div>
+                       </div>
+                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <input 
+                            type="number" 
+                            min="0"
+                            value={region.volunteerTargets?.[item.field] || 0}
+                            onChange={(e) => handleTargetChange(idx, item.field, e.target.value)}
+                            readOnly={item.field === 'total'}
+                            className="metric-input"
+                            style={{ 
+                              width: '100%', background: item.field === 'total' ? 'rgba(255,255,255,0.01)' : 'rgba(255,255,255,0.03)', 
+                              border: item.field === 'total' ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0.1)', 
+                              color: item.field === 'total' ? 'var(--accent-brand)' : '#fff', 
+                              fontSize: '1.75rem', fontWeight: 800, textAlign: 'center', outline: 'none',
+                              borderRadius: '8px', padding: '0.25rem 0', cursor: item.field === 'total' ? 'default' : 'pointer',
+                              opacity: item.field === 'total' ? 0.8 : 1
+                            }}
+                          />
+                          <div style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{item.desc}</div>
+                       </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

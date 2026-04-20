@@ -80,7 +80,12 @@ export default function Step2Geography({ data, update }) {
     const newRegion = {
       center: lat && lng ? { lat, lng } : { lat: 20.5937, lng: 78.9629 },
       radius: 50,
-      name: name
+      name: name,
+      volunteerTargets: {
+        total: 0,
+        local: 0,
+        travel: 0
+      }
     };
     const newRegions = [...regions, newRegion];
     update('geography', { regions: newRegions });
@@ -110,7 +115,6 @@ export default function Step2Geography({ data, update }) {
 
   const removeRegion = (e, index) => {
     e.stopPropagation();
-    if (regions.length <= 1) return;
     const newRegions = regions.filter((_, i) => i !== index);
     update('geography', { regions: newRegions });
     setActiveRegionIndex(-1); // Collapse after deletion
@@ -409,7 +413,7 @@ export default function Step2Geography({ data, update }) {
           {isLoaded ? (
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
-              center={activeRegion?.center}
+              center={activeRegion?.center || { lat: 20.5937, lng: 78.9629 }}
               zoom={7}
               onClick={handleMapClick}
               options={MAP_OPTIONS}
