@@ -5,58 +5,68 @@ const volunteerSchema = new mongoose.Schema({
   name: { type: String, required: true },
   status: { type: String, enum: ['Active', 'Deployed', 'Inactive'], default: 'Active' },
   locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', required: true },
+  skills: [{ type: String }],
+  contactPhone: { type: String, required: true },
+  lastActive: { type: Date, default: Date.now },
+  currentAssignment: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', default: null },
+  
+  // Availability Logic (Field-ready)
+  availability: {
+    monday:    { morning: Boolean, afternoon: Boolean, night: Boolean },
+    tuesday:   { morning: Boolean, afternoon: Boolean, night: Boolean },
+    wednesday: { morning: Boolean, afternoon: Boolean, night: Boolean },
+    thursday:  { morning: Boolean, afternoon: Boolean, night: Boolean },
+    friday:    { morning: Boolean, afternoon: Boolean, night: Boolean },
+    saturday:  { morning: Boolean, afternoon: Boolean, night: Boolean },
+    sunday:    { morning: Boolean, afternoon: Boolean, night: Boolean },
+  },
+
+  // Skills Taxonomy
   skills: [{
     type: String,
     enum: [
       'first_aid', 'medical', 'search_rescue', 'logistics',
       'communication', 'translation', 'counseling', 'driving',
-      'heavy_vehicle', 'water_rescue', 'shelter_setup', 'food_distribution',
-      'Medical', 'First Aid', 'Food', 'Water', 'Infrastructure', 'Shelter' // Legacy backwards compat
+      'heavy_vehicle', 'water_rescue', 'shelter_setup', 'food_distribution'
     ]
   }],
-  contactPhone: { type: String, required: true },
-  lastActive: { type: Date, default: Date.now },
-  currentAssignment: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', default: null },
-  
-  // Tactical Performance Metrics
-  performanceScore: { type: Number, default: 85 }, // 0-100%
-  missionsCompleted: { type: Number, default: 0 },
-  completionRate: { type: Number, default: 100 }, // % of missions finished
-  noShowCount: { type: Number, default: 0 },
-  experienceLevel: { 
-    type: String, 
-    enum: ['Junior', 'Mid-Level', 'Senior', 'Elite'], 
-    default: 'Mid-Level' 
-  },
 
-  // Mobility & Location
-  travelRadiusKm: { type: Number, default: 20 }, // Renaming travelRadius to travelRadiusKm or keeping both if needed. The plan adds travelRadiusKm.
-  travelRadius: { type: Number, default: 50 }, // Keep legacy for compat
-  
-  // Availability
-  availability: {
-    monday:    { morning: { type: Boolean, default: false }, afternoon: { type: Boolean, default: false }, night: { type: Boolean, default: false } },
-    tuesday:   { morning: { type: Boolean, default: false }, afternoon: { type: Boolean, default: false }, night: { type: Boolean, default: false } },
-    wednesday: { morning: { type: Boolean, default: false }, afternoon: { type: Boolean, default: false }, night: { type: Boolean, default: false } },
-    thursday:  { morning: { type: Boolean, default: false }, afternoon: { type: Boolean, default: false }, night: { type: Boolean, default: false } },
-    friday:    { morning: { type: Boolean, default: false }, afternoon: { type: Boolean, default: false }, night: { type: Boolean, default: false } },
-    saturday:  { morning: { type: Boolean, default: false }, afternoon: { type: Boolean, default: false }, night: { type: Boolean, default: false } },
-    sunday:    { morning: { type: Boolean, default: false }, afternoon: { type: Boolean, default: false }, night: { type: Boolean, default: false } },
-  },
-
-  // Transport
+  // Transport & Logistics
   vehicleType: {
     type: String,
-    enum: ['none', 'motorcycle', 'car', 'suv', 'van', 'truck', 'boat', 'None', 'Bike', 'Car', 'Truck'], // Includes legacy values
+    enum: ['none', 'motorcycle', 'car', 'suv', 'van', 'truck', 'boat'],
     default: 'none'
   },
   vehicleCapacity: { type: Number, default: 0 },   // payload in kg
-  
-  // Logistics (Legacy wrapper)
-  logistics: {
-    vehicle: { type: String, enum: ['None', 'Bike', 'Car', 'Truck'], default: 'None' },
-    supplyCapacity: { type: Number, default: 0 } // kg
+  travelRadiusKm: { type: Number, default: 20 },
+
+  // Performance (System Managed)
+  completionRate: { type: Number, default: 0, min: 0, max: 100 },
+  totalMissionsCompleted: { type: Number, default: 0 },
+  lastRating: { type: Number, min: 1, max: 5, default: null },
+
+  // Emergency Contact
+  emergencyContact: {
+    name: String,
+    phone: String,
+    relation: String
   },
+
+  // Current Assignment Lifecycle
+  currentAssignmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ResourceAllocation',
+    default: null
+  },
+  assignmentStatus: {
+    type: String,
+    enum: ['unassigned', 'pending_accept', 'accepted', 'en_route', 'on_site', 'completed'],
+    default: 'unassigned'
+  },
+  assignmentAcceptedAt: { type: Date, default: null },
+
+  // Alphanumeric code for first-time linking
+  volunteerCode: { type: String, unique: true, sparse: true },
 
   // ── Two-Pass Allocation Engine Fields ────────────────────────────────────
   responderType: {
@@ -67,38 +77,22 @@ const volunteerSchema = new mongoose.Schema({
   },
   hubId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null }, // Resident's fixed hub
   currentLoad: { type: Number, default: 0 },   // Current active assignment count
-  maxLoad: { type: Number, default: 3 },        // Max concurrent assignments (set by experienceLevel)
+  maxLoad: { type: Number, default: 3 },        // Max concurrent assignments
   transportClass: {
     type: String,
     enum: ['foot', 'bike', 'car', 'truck', 'helicopter'],
     default: 'car',
   },
-  eta: { type: Number, default: null },         // Predicted ETA in hours (populated at dispatch time)
+  eta: { type: Number, default: null },
   
-  // Tactical Performance Metrics additions
-  totalMissionsCompleted: { type: Number, default: 0 },
-  lastRating: { type: Number, min: 1, max: 5, default: null },
-
-  // Emergency contact
-  emergencyContact: {
-    name: String,
-    phone: String,
-    relation: String
+  // ── Semantic Orchestration — RAG / Vector Search ─────────────────────────
+  semanticProfile: { type: String, default: '' }, // Flattened capability bio for embedding
+  embedding: { 
+    type: [Number], 
+    default: [],
+    select: false // Avoid pulling large vector arrays in every query unless needed
   },
-
-  // Assignment tracking expanded
-  currentAssignmentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Event', // Using Event assuming it's the mission model
-    default: null
-  },
-  assignmentStatus: {
-    type: String,
-    enum: ['unassigned', 'pending_accept', 'accepted', 'en_route', 'on_site', 'completed'],
-    default: 'unassigned'
-  },
-  assignmentAcceptedAt: { type: Date, default: null },
-  volunteerCode: { type: String, index: { unique: true, partialFilterExpression: { volunteerCode: { $type: "string" } } } } // Sparse unique index
+  lastEmbeddedAt: { type: Date, default: null }
 });
 
 module.exports = mongoose.model('Volunteer', volunteerSchema);

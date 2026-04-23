@@ -12,6 +12,7 @@ const Project = require('./models/Project');
 const Supply = require('./models/Supply');
 const { dbscan } = require('./services/clustering');
 const { encrypt, decrypt } = require('./services/encryption');
+const volunteerRouter = require('./routes/volunteer');
 // Allocation Engine — wrapped in try/catch so a crash here doesn't kill the server
 let runAllocation, getLastAllocationResult, isAllocationRunning;
 try {
@@ -34,6 +35,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+
 // Firebase Admin Setup
 try {
   const serviceAccount = require('./serviceAccountKey.json');
@@ -48,29 +50,59 @@ try {
 app.use(cors());
 app.use(express.json());
 
+// GLOBAL DEVELOPMENT IDENTITY BYPASS (Enables full CRUD and multi-user testing without Firebase keys)
+app.use((req, res, next) => {
+  if (!admin.apps || admin.apps.length === 0) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split('Bearer ')[1];
+    
+    // Default guest
+    let uid = 'dev-user-001';
+    let email = 'tactical-guest@impactlink.dev';
+
+    if (token) {
+      try {
+        // STRATEGIC: Unverified decode for local orchestration testing.
+        // Direct Base64 decoding of the JWT payload to extract user identity.
+        const base64Payload = token.split('.')[1];
+        if (base64Payload) {
+          const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString());
+          uid = payload.user_id || payload.uid || uid;
+          email = payload.email || email;
+        }
+      } catch (e) {
+        console.warn('[AUTH] Failed to parse unverified token payload, falling back to default guest.');
+      }
+    }
+
+    req.user = { 
+      uid, 
+      email, 
+      name: email.split('@')[0] 
+    };
+  }
+  next();
+});
+
 // Firebase Auth Middleware
 const verifyToken = async (req, res, next) => {
-  const token = req.headers.authorization?.split('Bearer ')[1];
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.split('Bearer ')[1];
   
-  if (!admin.apps.length) {
-    // LOCAL TEST BYPASS: If no firebase admin, provide a stable mock identity
-    // This allows local dev to hit /api/users/me without credentials
-    req.user = { 
-      uid: 'local_dev_user_123', 
-      email: 'local-dev@impactlink.io', 
-      name: 'Local Developer' 
-    };
-    return next();
+  if (!admin.apps || admin.apps.length === 0) {
+    return next(); // Global bypass already set req.user
   }
 
-  if (!token) return res.status(401).json({ error: 'No token provided' });
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
     req.user = decodedToken;
     next();
   } catch (error) {
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: 'Unauthorized: ' + error.message });
   }
 };
 
@@ -95,12 +127,10 @@ const auditPII = (action) => async (req, res, next) => {
   }
 };
 
-// --- ROUTES ---
-const userRoutes = require('./routes/users');
-const volunteerRoutes = require('./routes/volunteer');
+// 8. Volunteer & User Identity Routes
+app.use('/api', verifyToken, volunteerRouter);
 
-app.use('/api/users', verifyToken, userRoutes);
-app.use('/api/volunteer', verifyToken, volunteerRoutes);
+// --- ROUTES ---
 
 // 1. Locations
 app.get('/api/locations', async (req, res) => {

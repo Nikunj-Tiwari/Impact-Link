@@ -22,6 +22,8 @@ backend/.env
 backend/.env.local
 serviceAccountKey.json
 backend/serviceAccountKey.json
+vertexAccountKey.json
+backend/vertexAccountKey.json
 
 # Editor / System
 .vscode/*

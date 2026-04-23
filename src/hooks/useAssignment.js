@@ -1,89 +1,69 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { volunteerApi } from '../services/volunteerApi';
-import { useAuth } from './useAuth';
+import { useState, useEffect, useCallback } from 'react';
+import { getMyVolunteerProfile, updateAssignmentStatus } from '../services/volunteerApi';
+import useAuth from './useAuth';
 
-export const useAssignment = () => {
-  const { appUser } = useAuth();
+/**
+ * Hook to manage the volunteer's active assignment lifecycle.
+ * Polling interval defaults to 30 seconds as per the implementation plan.
+ */
+export default function useAssignment(pollingInterval = 30000) {
+  const { firebaseUser, appUser, refreshUser } = useAuth();
   const [assignment, setAssignment] = useState(null);
-  const [status, setStatus] = useState('unassigned');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  // Using ref for interval to clear it safely
-  const intervalRef = useRef(null);
 
-  const fetchAssignment = useCallback(async () => {
-    if (!appUser || appUser.role !== 'Volunteer') return;
+  const fetchStatus = useCallback(async () => {
+    if (!firebaseUser) return;
+    
     try {
+      const profile = await getMyVolunteerProfile();
+      setAssignment({
+        id: profile.currentAssignmentId,
+        status: profile.assignmentStatus,
+        details: profile.assignmentDetails // Assuming populated on the backend or fetched separately
+      });
       setError(null);
-      const data = await volunteerApi.getAssignment();
-      setAssignment(data.assignment);
-      setStatus(data.status);
     } catch (err) {
+      console.error('Failed to poll assignment:', err);
       setError(err.message);
     } finally {
-      if (loading) setLoading(false);
-    }
-  }, [appUser, loading]);
-
-  // Initial fetch and set interval
-  useEffect(() => {
-    if (appUser && appUser.role === 'Volunteer') {
-      fetchAssignment();
-      
-      // Automatic 30-second polling for assignment availability
-      intervalRef.current = setInterval(fetchAssignment, 30000);
-      
-      // Cleanup
-      return () => clearInterval(intervalRef.current);
-    } else {
       setLoading(false);
     }
-  }, [appUser, fetchAssignment]);
+  }, [firebaseUser]);
 
-  // Window Focus polling (immediately fetch when users returns to tab)
   useEffect(() => {
-    const handleFocus = () => {
-      fetchAssignment();
-    };
+    fetchStatus();
     
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [fetchAssignment]);
+    const interval = setInterval(() => {
+      // Only poll if they don't have an active status requiring manual input (like on_site)
+      // or to check for new incoming assignments if unassigned.
+      fetchStatus();
+    }, pollingInterval);
 
-  const acceptAssignment = async () => {
-    try {
-      const res = await volunteerApi.acceptAssignment();
-      setStatus(res.assignmentStatus);
-      // Wait a moment before refreshing to ensure DB consistency
-      setTimeout(fetchAssignment, 500);
-      return res;
-    } catch (err) {
-      throw err;
-    }
-  };
+    return () => clearInterval(interval);
+  }, [fetchStatus, pollingInterval]);
 
   const updateStatus = async (newStatus) => {
     try {
-      const res = await volunteerApi.updateStatus(newStatus);
-      setStatus(res.assignmentStatus);
-      if (newStatus === 'completed') {
-        setAssignment(null);
-      }
-      setTimeout(fetchAssignment, 500);
-      return res;
+      const result = await updateAssignmentStatus(newStatus);
+      setAssignment(prev => ({
+        ...prev,
+        status: result.status
+      }));
+      // Trigger a session refresh to keep global appUser in sync
+      await refreshUser();
+      return result;
     } catch (err) {
+      setError(err.message);
       throw err;
     }
   };
 
   return {
     assignment,
-    status,
     loading,
     error,
-    refresh: fetchAssignment,
-    acceptAssignment,
-    updateStatus
+    updateStatus,
+    refreshAssignment: fetchStatus
   };
-};
+}

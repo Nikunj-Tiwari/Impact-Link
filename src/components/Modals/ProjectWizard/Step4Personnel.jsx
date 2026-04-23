@@ -146,10 +146,26 @@ export default function Step4Personnel({ data, update }) {
           <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', display: 'flex', gap: '2rem' }}>
             <div 
               onClick={() => update('personnel', { allocationStrategy: 'ai' })}
-              style={{ flex: 1, padding: '1.5rem', borderRadius: '12px', border: '1px solid', borderColor: data.allocationStrategy === 'ai' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', background: data.allocationStrategy === 'ai' ? 'rgba(79, 70, 229, 0.05)' : 'transparent', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ 
+                flex: 1, padding: '1.5rem', borderRadius: '12px', border: '1px solid', 
+                borderColor: data.allocationStrategy === 'ai' ? '#10B981' : 'rgba(255,255,255,0.05)', 
+                background: data.allocationStrategy === 'ai' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.01)', 
+                cursor: 'pointer', transition: 'all 0.2s',
+                position: 'relative', overflow: 'hidden',
+                boxShadow: data.allocationStrategy === 'ai' ? '0 0 20px rgba(16, 185, 129, 0.1)' : 'none'
+              }}
             >
+              {data.allocationStrategy === 'ai' && (
+                <div style={{
+                  position: 'absolute', top: '0', right: '0',
+                  background: '#10B981', color: '#fff', fontSize: '9px',
+                  fontWeight: 900, padding: '4px 10px', borderRadius: '0 12px 0 12px',
+                  textTransform: 'uppercase', letterSpacing: '0.08em',
+                  boxShadow: '-2px 2px 10px rgba(16, 185, 129, 0.2)'
+                }}> Adaptive </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                <Sparkles size={18} color={data.allocationStrategy === 'ai' ? 'var(--primary)' : 'var(--text-dim)'} />
+                <Sparkles size={18} color={data.allocationStrategy === 'ai' ? '#10B981' : 'var(--text-dim)'} />
                 <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>AI-Driven Optimization</span>
               </div>
               <p style={{ fontSize: '0.7rem', color: 'var(--text-dim)', margin: 0 }}>Auto-select top-tier responders based on skill parity and proximity.</p>

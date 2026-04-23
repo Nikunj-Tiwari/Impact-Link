@@ -14,39 +14,24 @@ import {
   X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import AuthForm from '../components/Auth/AuthForm';
-import { auth, onAuthStateChanged, logout } from '../services/firebase';
+import useAuth from '../hooks/useAuth';
+import { logout } from '../services/firebase';
 import './LandingPage.css';
 
 export default function LandingPage() {
+  const { firebaseUser, appUser } = useAuth();
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authType, setAuthType] = useState('signup');
   const [currentTourStep, setCurrentTourStep] = useState(-1); // -1 = closed
   const [infoModal, setInfoModal] = useState(null); // 'privacy', 'license', 'about', 'docs', 'faq'
-  const [currentUser, setCurrentUser] = useState(null);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const navigate = useNavigate();
 
-  const backgroundVideoPlaylist = [
-    "/volunteer_demo_video.mp4",
-    "/volunteer_demo_video_2.mp4",
-    "/volunteer_demo_video_3.mp4"
-  ];
-
-  useEffect(() => {
-    if (!auth) return;
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return () => unsub();
-  }, []);
-
   const handleLogout = async () => {
-    if (auth) {
-      try {
-        await logout();
-        setCurrentUser(null);
-      } catch (err) {
-        console.error('Logout error:', err);
-      }
+    try {
+      await logout();
+    } catch (err) {
+      console.error('Logout error:', err);
     }
   };
 
@@ -60,12 +45,18 @@ export default function LandingPage() {
     mouseY.set(clientY - top);
   }
 
-  const openAuthAdmin = (type = 'signup') => {
-    navigate(`/auth?intent=admin&mode=${type}`);
+  const backgroundVideoPlaylist = [
+    "/volunteer_demo_video.mp4",
+    "/volunteer_demo_video_2.mp4",
+    "/volunteer_demo_video_3.mp4"
+  ];
+
+  const handleAuthSuccess = () => {
+    navigate('/dashboard');
   };
 
-  const openAuthVolunteer = (type = 'signup') => {
-    navigate(`/auth?intent=volunteer&mode=${type}`);
+  const openAuth = (type) => {
+    navigate(`/auth?type=${type}`);
   };
 
   const tourSteps = [
@@ -117,7 +108,7 @@ export default function LandingPage() {
               <button className="dropdown-link" onClick={() => setCurrentTourStep(0)}>
                 <strong>Guided Tour</strong> Walk through the mission logic.
               </button>
-              <button className="dropdown-link" onClick={() => openAuthAdmin()}>
+              <button className="dropdown-link" onClick={() => openAuth('signup')}>
                 <strong>Simulator</strong> Access the AI decision engine.
               </button>
             </div>
@@ -139,16 +130,20 @@ export default function LandingPage() {
           
           <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.1)', margin: '0 0.5rem' }} />
           
-          {currentUser ? (
+          {firebaseUser ? (
             <>
-              <button onClick={() => navigate('/dashboard')} className="btn-nav-primary">Command Center</button>
+              <button 
+                onClick={() => navigate(appUser?.role === 'Volunteer' ? '/volunteer' : '/dashboard')} 
+                className="btn-nav-primary"
+              >
+                Go to Portal
+              </button>
               <button onClick={handleLogout} className="btn-text">Log out</button>
             </>
           ) : (
             <>
-              <button onClick={() => openAuthAdmin('login')} className="btn-text">Admin Login</button>
-              <button onClick={() => openAuthVolunteer('login')} className="btn-text">Volunteer Login</button>
-              <button onClick={() => openAuthAdmin('signup')} className="btn-nav-primary">Command Center</button>
+              <button onClick={() => navigate('/auth')} className="btn-text">Log in</button>
+              <button onClick={() => navigate('/auth?intent=volunteer')} className="btn-nav-primary">Join as Volunteer</button>
             </>
           )}
         </div>
@@ -189,22 +184,33 @@ export default function LandingPage() {
             The intelligence layer for localized disaster response.
           </p>
           <div className="hero-ctas" onMouseMove={handleMouseMove}>
-            {currentUser ? (
-              <button onClick={() => navigate('/setup')} className="btn-hero-primary">
-                Return to Dashboard <ArrowRight size={18} />
+            {firebaseUser ? (
+              <button 
+                onClick={() => navigate(appUser?.role === 'Volunteer' ? '/volunteer' : '/dashboard')} 
+                className="btn-hero-primary"
+              >
+                Return to Mission <ArrowRight size={18} />
               </button>
             ) : (
-              <>
-                <button onClick={() => openAuthAdmin('signup')} className="btn-hero-primary">
-                  Access Command Center <ArrowRight size={18} />
+              <div style={{ display: 'flex', gap: '1.5rem', width: '100%', justifyContent: 'center' }}>
+                <button 
+                  onClick={() => navigate('/auth?intent=admin')} 
+                  style={{ flex: 1, maxWidth: '280px' }}
+                  className="btn-hero-primary"
+                >
+                  Command Control <ArrowRight size={18} />
                 </button>
-                <button onClick={() => openAuthVolunteer('signup')} className="btn-hero-secondary" style={{
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', padding: '0 1.5rem', borderRadius: '8px',
-                  color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600
-                }}>
-                  Volunteer Portal <ArrowRight size={18} />
+                <button 
+                  onClick={() => navigate('/auth?intent=volunteer')} 
+                  style={{ 
+                    flex: 1, maxWidth: '280px', background: 'transparent', 
+                    border: '1px solid rgba(255,255,255,0.1)', color: '#fff' 
+                  }}
+                  className="btn-hero-primary"
+                >
+                  Volunteer Portal <Zap size={18} style={{ marginLeft: '8px' }} />
                 </button>
-              </>
+              </div>
             )}
             <div className="btn-glow-wrapper group">
               <motion.div
@@ -324,9 +330,9 @@ export default function LandingPage() {
           <div className="footer-col">
             <h4>Product</h4>
             <div className="footer-links">
-              <button className="footer-link" onClick={() => openAuthAdmin('signup')}>Features</button>
+              <button className="footer-link" onClick={() => openAuth('signup')}>Features</button>
               <button className="footer-link" onClick={() => setCurrentTourStep(0)}>Interactive Demo</button>
-              <button className="footer-link" onClick={() => openAuthAdmin('signup')}>Simulator</button>
+              <button className="footer-link" onClick={() => openAuth('signup')}>Simulator</button>
               <button className="footer-link" onClick={() => setInfoModal('docs')}>Integrations</button>
             </div>
           </div>
@@ -371,7 +377,6 @@ export default function LandingPage() {
         </div>
       </footer>
 
-  // Removed inline Auth Modal in favor of /auth route
 
       {/* Info Modals */}
       <AnimatePresence>
@@ -436,7 +441,7 @@ export default function LandingPage() {
                     if (currentTourStep < 3) setCurrentTourStep(prev => prev + 1);
                     else {
                       setCurrentTourStep(-1);
-                      openAuthAdmin('signup');
+                      openAuth('signup');
                     }
                   }}
                 >

@@ -6,7 +6,7 @@ const UserSchema = new mongoose.Schema({
   displayName: { type: String },
   role: {
     type: String,
-    enum: ['Volunteer', 'Administrator', null],
+    enum: ['Volunteer', 'Administrator'],
     default: null   // null = not yet selected (triggers onboarding modal)
   },
   linkedVolunteerId: {
@@ -16,7 +16,7 @@ const UserSchema = new mongoose.Schema({
   },
   onboardingComplete: { type: Boolean, default: false },
   lastActiveAt: { type: Date },
-  fcmToken: { type: String, default: null },   // for push notifications
+  fcmToken: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 

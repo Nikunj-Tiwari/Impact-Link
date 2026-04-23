@@ -1,113 +1,97 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { volunteerApi } from '../../services/volunteerApi';
-import { Calendar, Save, Loader2, CheckCircle2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import { Clock, Check, Save, Loader2 } from 'lucide-react';
+import useAuth from '../../hooks/useAuth';
+import { updateMyProfile } from '../../services/volunteerApi';
 
 export default function ScheduleTab() {
-  const { appUser } = useAuth();
-  const [schedule, setSchedule] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  const times = ['morning', 'afternoon', 'night'];
-
-  useEffect(() => {
-    fetchProfile();
-  }, [appUser]);
-
-  const fetchProfile = async () => {
-    try {
-      const data = await volunteerApi.getProfile();
-      if (data.availability && data.availability.monday) {
-         setSchedule(data.availability);
-      } else {
-         // Initialize from scratch if missing
-         const empty = {};
-         days.forEach(d => {
-           empty[d] = { morning: false, afternoon: false, night: false };
-         });
-         setSchedule(empty);
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage('Failed to load schedule');
-    } finally {
-      setLoading(false);
+  const { appUser, refreshUser } = useAuth();
+  const [schedule, setSchedule] = useState(
+    appUser?.linkedVolunteerId?.availability || {
+      monday: { morning: false, afternoon: false, night: false },
+      tuesday: { morning: false, afternoon: false, night: false },
+      wednesday: { morning: false, afternoon: false, night: false },
+      thursday: { morning: false, afternoon: false, night: false },
+      friday: { morning: false, afternoon: false, night: false },
+      saturday: { morning: false, afternoon: false, night: false },
+      sunday: { morning: false, afternoon: false, night: false },
     }
-  };
+  );
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const toggleSlot = (day, time) => {
+  const days = Object.keys(schedule);
+  const slots = ['morning', 'afternoon', 'night'];
+
+  const toggleSlot = (day, slot) => {
     setSchedule(prev => ({
       ...prev,
       [day]: {
         ...prev[day],
-        [time]: !prev[day][time]
+        [slot]: !prev[day][slot]
       }
     }));
+    setSaveSuccess(false);
   };
 
   const handleSave = async () => {
-    setSaving(true);
-    setMessage('');
+    setIsSaving(true);
     try {
-      await volunteerApi.updateProfile({ availability: schedule });
-      setMessage('Schedule updated successfully!');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (error) {
-      setMessage('Error updating schedule');
+      await updateMyProfile({ availability: schedule });
+      await refreshUser();
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save schedule:', err);
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
-  if (loading || !schedule) {
-    return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-dim)' }}>Loading Schedule...</div>;
-  }
-
   return (
-    <div style={{ padding: '1.25rem', color: '#fff' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <Calendar size={24} color="var(--v-amber)" />
-        <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>My Availability</h2>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <header>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem' }}>Operational Availability</h1>
+        <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>
+          Mark when you're available for localized dispatch missions.
+        </p>
+      </header>
 
-      <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-        Update your standard weekly availability matrix. The allocation engine uses this to route missions to you when you are on shift.
-      </p>
-
-      {message && (
-        <div style={{ padding: '0.75rem', background: 'rgba(52, 211, 153, 0.1)', color: '#10b981', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-          <CheckCircle2 size={16} /> {message}
-        </div>
-      )}
-
-      <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', marginBottom: '2rem' }}>
-        {/* Header */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(80px, 1fr) 1fr 1fr 1fr', background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid var(--border-color)', padding: '0.75rem' }}>
-          <div></div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Morn</div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Aft</div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Night</div>
-        </div>
-
-        {/* Rows */}
-        {days.map(day => (
-          <div key={day} style={{ display: 'grid', gridTemplateColumns: 'minmax(80px, 1fr) 1fr 1fr 1fr', borderBottom: day !== 'sunday' ? '1px solid rgba(255,255,255,0.02)' : 'none', padding: '0.75rem' }}>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', textTransform: 'capitalize' }}>
-              {day.slice(0, 3)}
+      <div style={{ 
+        display: 'flex', flexDirection: 'column', gap: '1rem',
+        background: '#111', padding: '1.5rem', borderRadius: '24px',
+        border: '1px solid rgba(255,255,255,0.05)'
+      }}>
+        {/* Header row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 1fr', gap: '0.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <div />
+          {slots.map(s => (
+            <div key={s} style={{ 
+              fontSize: '0.65rem', textTransform: 'uppercase', 
+              color: 'var(--text-dim)', textAlign: 'center', fontWeight: 700 
+            }}>
+              {s}
             </div>
-            {times.map(time => (
-              <div key={`${day}-${time}`} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <button
-                  onClick={() => toggleSlot(day, time)}
-                  style={{
-                    width: '32px', height: '32px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                    background: schedule[day][time] ? 'var(--v-amber)' : 'rgba(255,255,255,0.05)',
-                    transition: 'background 0.2s'
-                  }}
-                />
+          ))}
+        </div>
+
+        {/* Day rows */}
+        {days.map(day => (
+          <div key={day} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'capitalize' }}>{day.slice(0,3)}</div>
+            {slots.map(slot => (
+              <div 
+                key={slot} 
+                onClick={() => toggleSlot(day, slot)}
+                style={{ 
+                  height: '48px', borderRadius: '12px', cursor: 'pointer',
+                  background: schedule[day][slot] ? 'var(--v-amber, #F59E0B)' : 'rgba(255,255,255,0.03)',
+                  border: '1px solid',
+                  borderColor: schedule[day][slot] ? 'transparent' : 'rgba(255,255,255,0.05)',
+                  transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}
+              >
+                {schedule[day][slot] && <Check size={18} color="#000" />}
               </div>
             ))}
           </div>
@@ -115,18 +99,19 @@ export default function ScheduleTab() {
       </div>
 
       <button
-        disabled={saving}
         onClick={handleSave}
+        disabled={isSaving}
         style={{
-          width: '100%', padding: '1rem', borderRadius: '8px', border: 'none',
-          background: 'var(--primary)', color: '#fff', fontSize: '1rem', fontWeight: 600,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-          cursor: saving ? 'not-allowed' : 'pointer',
-          opacity: saving ? 0.7 : 1
+          width: '100%', padding: '1.25rem', borderRadius: '100px',
+          background: saveSuccess ? '#10B981' : 'var(--primary)',
+          color: '#fff', fontSize: '1.1rem', fontWeight: 700, border: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
+          transition: 'all 0.3s ease'
         }}
       >
-        {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-        Save Schedule
+        {isSaving ? <Loader2 className="animate-spin" size={20} /> : (
+          saveSuccess ? <>Schedule Locked <Check size={20} /></> : <>Update Availability <Save size={20} /></>
+        )}
       </button>
     </div>
   );

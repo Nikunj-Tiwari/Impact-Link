@@ -12,7 +12,7 @@ import { auth } from './firebase';
 /**
  * Get authorization headers using Firebase token
  */
-const getAuthHeaders = async () => {
+export const getAuthHeaders = async () => {
   try {
     const token = await auth?.currentUser?.getIdToken();
     return {

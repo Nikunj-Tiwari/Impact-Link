@@ -1,169 +1,204 @@
 const express = require('express');
 const router = express.Router();
+const User = require('../models/User');
 const Volunteer = require('../models/Volunteer');
 const MissionHistory = require('../models/MissionHistory');
-const Event = require('../models/Event');
-const checkRole = require('../middleware/checkRole'); // Assuming verifyToken is applied before
+const checkRole = require('../middleware/checkRole');
+const { findSemanticMatches } = require('../services/semanticEngine');
 
-// GET /api/volunteer/me - Returns full Volunteer doc for the linked volunteer
-router.get('/me', checkRole('Volunteer', 'Administrator'), async (req, res) => {
+// ─── USER ONBOARDING & IDENTITY ───────────────────────────────────────────
+
+/**
+ * POST /api/users/setup
+ * First-time setup for Firebase users to select a role and link to a volunteer profile.
+ */
+router.post('/users/setup', async (req, res) => {
   try {
-    const linkedId = req.impactUser.linkedVolunteerId;
-    if (!linkedId) return res.status(404).json({ error: 'No linked volunteer profile found.' });
-
-    // Exclude admin-only fields in the query or mapping
-    const volunteer = await Volunteer.findById(linkedId).select('-performanceScore -adminNotes');
-    if (!volunteer) return res.status(404).json({ error: 'Volunteer profile not found.' });
+    const { role, volunteerCode } = req.body;
     
-    res.json(volunteer);
-  } catch (error) {
-    console.error('Fetch volunteer profile error:', error);
-    res.status(500).json({ error: 'Failed to fetch volunteer profile.' });
+    if (!req.user) {
+      console.error('[SETUP] Fatal: req.user is missing despite middleware passage');
+      return res.status(401).json({ error: 'Identity verification context missing.' });
+    }
+
+    const uid = req.user.uid;
+    const email = req.user.email || 'guest@impactlink.dev';
+
+    let user = await User.findOne({ uid });
+    if (user) return res.status(400).json({ error: 'User already configured.' });
+
+    let linkedVolunteerId = null;
+
+    if (role === 'Volunteer' && volunteerCode) {
+      const vol = await Volunteer.findOne({ volunteerCode });
+      if (!vol) return res.status(404).json({ error: 'Invalid volunteer enrollment code.' });
+      
+      linkedVolunteerId = vol._id;
+      // Single-use code: nullify after successful link
+      vol.volunteerCode = null;
+      await vol.save();
+    }
+
+    user = new User({
+      uid,
+      email,
+      displayName: req.user.name || email.split('@')[0],
+      role,
+      linkedVolunteerId,
+      onboardingComplete: true
+    });
+
+    await user.save();
+    res.status(201).json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// PATCH /api/volunteer/me - Update Volunteer fields (availability, skills, logistics, etc)
-router.patch('/me', checkRole('Volunteer', 'Administrator'), async (req, res) => {
+/**
+ * GET /api/users/me
+ * Returns current session user with populated volunteer details.
+ */
+router.get('/users/me', async (req, res) => {
   try {
-    const linkedId = req.impactUser.linkedVolunteerId;
-    if (!linkedId) return res.status(404).json({ error: 'No linked volunteer profile found.' });
+    const user = await User.findOne({ uid: req.user.uid }).populate('linkedVolunteerId');
+    if (!user) return res.status(404).json({ error: 'Identity not found.' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-    // Explicit Allowlist to prevent escalating privileges (as per Phase 1 spec)
-    const allowedFields = ['availability', 'skills', 'vehicleType', 'vehicleCapacity', 'travelRadius', 'travelRadiusKm', 'emergencyContact', 'contactPhone', 'address'];
+// ─── VOLUNTEER CORE OPS ───────────────────────────────────────────────────
+
+/**
+ * GET /api/volunteer/me
+ * Returns the Volunteer profile linked to the current user.
+ */
+router.get('/volunteer/me', checkRole('Volunteer', 'Administrator'), async (req, res) => {
+  try {
+    const vol = await Volunteer.findById(req.impactUser.linkedVolunteerId);
+    if (!vol) return res.status(404).json({ error: 'Volunteer profile missing.' });
+    
+    // Privacy: exclude admin-only sensitive metrics if needed
+    const response = vol.toObject();
+    delete response.performanceScore; 
+    
+    res.json(response);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/volunteer/me
+ * Updates volunteer-controlled fields (availability, skills, transport).
+ */
+router.patch('/volunteer/me', checkRole('Volunteer'), async (req, res) => {
+  try {
+    const allowedUpdates = [
+      'availability', 'skills', 'vehicleType', 'vehicleCapacity',
+      'travelRadiusKm', 'emergencyContact', 'contactPhone', 'address'
+    ];
+    
     const updates = {};
-    
     Object.keys(req.body).forEach(key => {
-      if (allowedFields.includes(key)) {
-        updates[key] = req.body[key];
-      }
+      if (allowedUpdates.includes(key)) updates[key] = req.body[key];
     });
 
-    const volunteer = await Volunteer.findByIdAndUpdate(linkedId, { $set: updates }, { new: true }).select('-performanceScore -adminNotes');
-    res.json(volunteer);
-  } catch (error) {
-    console.error('Update volunteer error:', error);
-    res.status(500).json({ error: 'Failed to update volunteer profile.' });
+    const vol = await Volunteer.findByIdAndUpdate(
+      req.impactUser.linkedVolunteerId,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    res.json(vol);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/volunteer/me/assignment - Returns current assignment with populated mission data
-router.get('/me/assignment', checkRole('Volunteer', 'Administrator'), async (req, res) => {
+// ─── ASSIGNMENT LIFECYCLE ────────────────────────────────────────────────
+
+/**
+ * PATCH /api/volunteer/me/assignment/status
+ * Sequential status tracker: accepted -> en_route -> on_site -> completed.
+ */
+router.patch('/volunteer/me/assignment/status', checkRole('Volunteer'), async (req, res) => {
   try {
-    const linkedId = req.impactUser.linkedVolunteerId;
-    const volunteer = await Volunteer.findById(linkedId).populate('currentAssignment');
-    
-    if (!volunteer || !volunteer.currentAssignment) {
-      return res.json({ assignment: null });
-    }
-
-    // Wrap assignment inside object to align with spec `{ assignment: ... }`
-    res.json({
-      assignment: volunteer.currentAssignment,
-      status: volunteer.assignmentStatus || 'unassigned' // Backwards compatibility if field doesn't exist
-    });
-  } catch (error) {
-    console.error('Fetch assignment error:', error);
-    res.status(500).json({ error: 'Failed to fetch active assignment.' });
-  }
-});
-
-// PATCH /api/volunteer/me/assignment/accept - Accept the current pending assignment
-router.patch('/me/assignment/accept', checkRole('Volunteer'), async (req, res) => {
-  try {
-    const linkedId = req.impactUser.linkedVolunteerId;
-    const volunteer = await Volunteer.findById(linkedId);
-    
-    if (!volunteer || volunteer.assignmentStatus !== 'pending_accept') {
-      return res.status(400).json({ error: 'No pending assignment to accept.' });
-    }
-
-    volunteer.assignmentStatus = 'accepted';
-    volunteer.assignmentAcceptedAt = new Date();
-    await volunteer.save();
-
-    res.json({ success: true, assignmentStatus: volunteer.assignmentStatus });
-  } catch (error) {
-    console.error('Accept assignment error:', error);
-    res.status(500).json({ error: 'Failed to accept assignment.' });
-  }
-});
-
-// PATCH /api/volunteer/me/assignment/status - Progress assignment flow
-router.patch('/me/assignment/status', checkRole('Volunteer'), async (req, res) => {
-  try {
-    const linkedId = req.impactUser.linkedVolunteerId;
     const { status } = req.body;
-    const volunteer = await Volunteer.findById(linkedId);
+    const vol = await Volunteer.findById(req.impactUser.linkedVolunteerId);
     
-    // Validate Current State
+    if (!vol.currentAssignmentId) return res.status(400).json({ error: 'No active mission assigned.' });
+
     const validTransitions = {
-      'accepted': 'en_route',
-      'en_route': 'on_site',
-      'on_site': 'completed'
+      'pending_accept': ['accepted'],
+      'accepted': ['en_route'],
+      'en_route': ['on_site'],
+      'on_site': ['completed']
     };
 
-    if (validTransitions[volunteer.assignmentStatus] !== status) {
-       return res.status(400).json({ error: `Invalid transition from ${volunteer.assignmentStatus} to ${status}` });
+    if (!validTransitions[vol.assignmentStatus]?.includes(status)) {
+      return res.status(400).json({ 
+        error: `Invalid transition from ${vol.assignmentStatus} to ${status}.` 
+      });
     }
 
-    volunteer.assignmentStatus = status;
+    vol.assignmentStatus = status;
+    if (status === 'accepted') vol.assignmentAcceptedAt = new Date();
 
     if (status === 'completed') {
-       // Atomic finalization
-       if (volunteer.currentAssignment) {
-          const mission = await Event.findById(volunteer.currentAssignment);
-          if (mission) {
-            // Log history
-            const history = new MissionHistory({
-              volunteerId: volunteer._id,
-              missionId: mission._id,
-              missionName: mission.title,
-              status: 'completed',
-              completedAt: new Date(),
-            });
-            await history.save();
-          }
-       }
-       volunteer.currentAssignment = null;
-       volunteer.assignmentStatus = 'unassigned';
-       volunteer.missionsCompleted = (volunteer.missionsCompleted || 0) + 1;
-       volunteer.currentLoad = Math.max(0, volunteer.currentLoad - 1);
+      // Archive to History
+      const history = new MissionHistory({
+        volunteerId: vol._id,
+        allocationId: vol.currentAssignmentId,
+        status: 'completed',
+        completedAt: new Date()
+      });
+      await history.save();
+
+      // Clear current workload
+      vol.currentAssignmentId = null;
+      vol.assignmentStatus = 'unassigned';
+      vol.totalMissionsCompleted += 1;
     }
 
-    await volunteer.save();
-    res.json({ success: true, assignmentStatus: volunteer.assignmentStatus });
-  } catch (error) {
-    console.error('Update assignment status error:', error);
-    res.status(500).json({ error: 'Failed to update status.' });
+    await vol.save();
+    res.json({ status: vol.assignmentStatus, currentAssignmentId: vol.currentAssignmentId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/volunteer/me/history - Paginated mission history
-router.get('/me/history', checkRole('Volunteer', 'Administrator'), async (req, res) => {
+// ─── SEMANTIC ORCHESTRATION ───────────────────────────────────────────────
+
+/**
+ * POST /api/allocate/semantic
+ * Advanced RAG-driven semantic matching. Finds best volunteers for a mission context.
+ */
+router.post('/allocate/semantic', checkRole('Administrator'), async (req, res) => {
   try {
-    const linkedId = req.impactUser.linkedVolunteerId;
-    const page = parseInt(req.query.page) || 1;
-    const limit = 20;
+    const { missionContext, volunteerIds } = req.body;
+    
+    // STRATEGIC: Pull candidates and include their hidden high-dimensional embeddings
+    const candidates = await Volunteer.find({ 
+      _id: { $in: volunteerIds },
+      status: 'Active'
+    }).select('+embedding');
 
-    const history = await MissionHistory.find({ volunteerId: linkedId })
-      .sort({ completedAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+    const matches = await findSemanticMatches(missionContext, candidates);
+    
+    // Format response for frontend consumption
+    const result = matches.map(m => ({
+      volunteerId: m.volunteer._id,
+      semanticScore: m.semanticScore
+    }));
 
-    res.json(history);
-  } catch (error) {
-    console.error('Fetch history error:', error);
-    res.status(500).json({ error: 'Failed to fetch history.' });
+    res.json(result);
+  } catch (err) {
+    console.error('Semantic Allocation API Failure:', err);
+    res.status(500).json({ error: 'Semantic allocation failed: ' + err.message });
   }
-});
-
-// GET /api/volunteer/me/notifications - Static for now, expand with realtime alerts
-router.get('/me/notifications', checkRole('Volunteer', 'Administrator'), async (req, res) => {
-  res.json([]);
-});
-
-router.patch('/me/notifications/:id/read', checkRole('Volunteer', 'Administrator'), async (req, res) => {
-  res.json({ success: true });
 });
 
 module.exports = router;

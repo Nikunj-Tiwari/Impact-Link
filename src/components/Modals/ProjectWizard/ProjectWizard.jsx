@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Network, 
   X, 
@@ -46,7 +46,7 @@ export default function ProjectWizard({ onClose, initialData = null }) {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    operatingMode: 'manual',
+    operatingMode: 'assisted',
     allocationStrategy: 'ai',
     metadata: {
       priority: 'Medium',
@@ -72,6 +72,15 @@ export default function ProjectWizard({ onClose, initialData = null }) {
     ],
     ...initialData // Merge existing data over defaults
   });
+
+  // Store the initial state to detect changes
+  const originalData = useRef(formData);
+
+  // Check if form is modified (Dirty State Detection)
+  const isDirty = useMemo(() => {
+    // Deep comparison using JSON stringify (sufficient for this nested object)
+    return JSON.stringify(formData) !== JSON.stringify(originalData.current);
+  }, [formData]);
 
   const updateFormData = (stepId, data) => {
     // Specialized handling for step components that might pass partial data
@@ -182,23 +191,34 @@ export default function ProjectWizard({ onClose, initialData = null }) {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {isEditMode && (
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="btn-primary"
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)',
-                color: 'var(--success)', padding: '0.4rem 0.75rem', borderRadius: '6px',
-                fontSize: '0.75rem', fontWeight: 600, cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s', height: 'fit-content'
-              }}
-            >
-              {isSubmitting ? 'Updating...' : 'Update Strategy'}
-            </button>
-          )}
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <AnimatePresence>
+            {isEditMode && isDirty && (
+              <motion.button
+                initial={{ opacity: 0, x: 20, scale: 0.95 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="btn-primary"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)',
+                  boxShadow: '0 0 20px rgba(16, 185, 129, 0.1)',
+                  color: '#10B981', padding: '0.5rem 1rem', borderRadius: '8px',
+                  fontSize: '0.8rem', fontWeight: 700, cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s', height: 'fit-content'
+                }}
+              >
+                {isSubmitting ? 'Syncing...' : 'Update Strategy'}
+              </motion.button>
+            )}
+          </AnimatePresence>
+          <div style={{ 
+            fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', 
+            alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem',
+            background: 'rgba(255,255,255,0.03)', borderRadius: '8px',
+            border: '1px solid rgba(255,255,255,0.05)'
+          }}>
             <LifeBuoy size={14} /> Documentation & Standards
           </div>
         </div>

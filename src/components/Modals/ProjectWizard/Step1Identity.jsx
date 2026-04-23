@@ -116,16 +116,36 @@ export default function Step1Identity({ data, update }) {
                       onClick={() => !mode.locked && handleChange('operatingMode', mode.id)}
                       style={{ 
                         padding: '1.25rem', borderRadius: '12px', border: '1px solid',
-                        borderColor: data.operatingMode === mode.id ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                        background: data.operatingMode === mode.id ? 'rgba(79, 70, 229, 0.08)' : 'rgba(255,255,255,0.01)',
+                        borderColor: data.operatingMode === mode.id 
+                          ? (mode.id === 'assisted' ? '#10B981' : 'var(--primary)') 
+                          : 'rgba(255,255,255,0.05)',
+                        background: data.operatingMode === mode.id 
+                          ? (mode.id === 'assisted' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(79, 70, 229, 0.08)') 
+                          : 'rgba(255,255,255,0.01)',
                         cursor: mode.locked ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', gap: '1.25rem',
-                        opacity: mode.locked ? 0.4 : 1, transition: 'all 0.2s'
+                        opacity: mode.locked ? 0.4 : 1, transition: 'all 0.2s',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        boxShadow: (data.operatingMode === mode.id && mode.id === 'assisted') 
+                          ? '0 0 20px rgba(16, 185, 129, 0.15)' 
+                          : 'none'
                       }}
                     >
+                      {mode.id === 'assisted' && (
+                        <div style={{
+                          position: 'absolute', top: '0', right: '0',
+                          background: '#10B981', color: '#fff', fontSize: '9px',
+                          fontWeight: 900, padding: '4px 10px', borderRadius: '0 12px 0 12px',
+                          textTransform: 'uppercase', letterSpacing: '0.08em',
+                          boxShadow: '-2px 2px 10px rgba(16, 185, 129, 0.2)'
+                        }}> Recommended </div>
+                      )}
                       <div style={{ 
                         width: '40px', height: '40px', borderRadius: '10px', 
-                        background: data.operatingMode === mode.id ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
+                        background: data.operatingMode === mode.id 
+                          ? (mode.id === 'assisted' ? '#10B981' : 'var(--primary)') 
+                          : 'rgba(255,255,255,0.03)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center'
                       }}>
                         <mode.icon size={20} color={data.operatingMode === mode.id ? '#fff' : 'var(--text-dim)'} />
@@ -194,7 +214,7 @@ export default function Step1Identity({ data, update }) {
                 )}
               </div>
 
-              <div style={{ padding: '1.5rem', background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.1)', borderRadius: '16px' }}>
+              <div style={{ padding: '1.5rem', background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.1)', borderRadius: '16px', position: 'relative' }}>
                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                        <Radio size={18} color="var(--success)" />
@@ -203,9 +223,30 @@ export default function Step1Identity({ data, update }) {
                     <div 
                       onMouseEnter={() => setShowTooltip(true)}
                       onMouseLeave={() => setShowTooltip(false)}
-                      style={{ cursor: 'help', color: 'var(--text-dim)' }}
+                      style={{ cursor: 'help', color: 'var(--text-dim)', position: 'relative' }}
                     >
                       <Info size={14} />
+                      {showTooltip && (
+                        <div style={{
+                          position: 'absolute', bottom: '30px', right: '0',
+                          padding: '1.25rem', background: 'rgba(15, 23, 42, 0.98)', 
+                          backdropFilter: 'blur(12px)',
+                          color: '#fff', fontSize: '0.8rem', borderRadius: '16px', zIndex: 100,
+                          width: '280px', border: '1px solid rgba(245, 158, 11, 0.3)',
+                          boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+                          lineHeight: '1.5',
+                          textAlign: 'left'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                            <div style={{ width: '3px', height: '14px', background: '#F59E0B', borderRadius: '10px' }} />
+                            <div style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#F59E0B', fontSize: '0.75rem' }}>Operational Insight</div>
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.5rem', color: '#fff' }}>Broadcast Protocol</div>
+                          <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontWeight: 400 }}>
+                            Enables low-latency push notifications via Firebase and SMS gateways to all active responders in the sector.
+                          </p>
+                        </div>
+                      )}
                     </div>
                  </div>
                  <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '1.25rem', lineHeight: '1.5' }}>

@@ -77,23 +77,88 @@ export default function Step5Roster({ data, update }) {
     }
   };
 
-  if (data.allocationStrategy === 'ai') {
-    return (
-      <div style={{ padding: '4rem', textAlign: 'center', background: 'rgba(79, 70, 229, 0.02)', border: '1px dashed rgba(79, 70, 229, 0.2)', borderRadius: '24px' }}>
-         <Sparkles size={48} color="var(--primary)" style={{ marginBottom: '1.5rem', opacity: 0.5 }} />
-         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fff', marginBottom: '1rem' }}>AI-Augmented Allocation Active</h2>
-         <p style={{ color: 'var(--text-dim)', maxWidth: '500px', margin: '0 auto', lineHeight: 1.6 }}>
-           The ImpactLink Tactical Engine will automatically select the highest-performing responders based on proximity and skill parity once the environment is launched.
-         </p>
-         <div style={{ marginTop: '2rem', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>
-            YOU CAN CONTINUE TO THE FINAL RESOURCE PHASE
-         </div>
-      </div>
-    );
-  }
+  const handleAutoDraft = async () => {
+    try {
+      setIsLoading(true);
+      const missionContext = `${data.name}. ${data.description}. Focus: ${data.metadata.beneficiaryType}. Priority: ${data.metadata.priority}`;
+      
+      const res = await fetch('http://localhost:5000/api/allocate/semantic', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}` // Strategic: Identity Context
+        },
+        body: JSON.stringify({
+          missionContext,
+          volunteerIds: volunteers.map(v => v._id)
+        })
+      });
+
+      if (!res.ok) throw new Error('Semantic allocation request failed.');
+      
+      const semanticMatches = await res.json();
+      
+      // Map scores back to volunteers
+      const scoredVolunteers = volunteers.map(v => {
+        const match = semanticMatches.find(m => m.volunteerId === v._id);
+        return { ...v, semanticScore: match ? match.semanticScore : 0 };
+      });
+
+      setVolunteers(scoredVolunteers.sort((a, b) => (b.semanticScore || 0) - (a.semanticScore || 0)));
+
+      // Optional: Auto-select Top 3 for current region?
+      // For now, just let the user see the scores and decide, OR we can auto-toggle the best ones.
+      
+    } catch (err) {
+      console.error('Auto-Draft Failure:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
+       {data.allocationStrategy === 'ai' && (
+         <div style={{ 
+           padding: '1.5rem 2rem', 
+           background: 'rgba(79, 70, 229, 0.05)', 
+           border: '1px solid rgba(79, 70, 229, 0.2)', 
+           borderRadius: '16px',
+           display: 'flex',
+           alignItems: 'center',
+           justifyContent: 'space-between',
+           gap: '2rem'
+         }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+              <div style={{ 
+                width: '40px', height: '40px', borderRadius: '12px', background: 'var(--primary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center' 
+              }}>
+                <Sparkles size={20} color="#fff" />
+              </div>
+              <div>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff', margin: 0 }}>AI-Augmented Allocation Active</h4>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', margin: 0 }}>
+                  The engine will auto-draft top responders. Manual selections below act as **Tactical Overrides**.
+                </p>
+              </div>
+           </div>
+           
+           <button 
+             onClick={handleAutoDraft}
+             disabled={isLoading}
+             style={{ 
+               padding: '0.75rem 1.25rem', background: 'var(--primary)', color: '#fff',
+               border: 'none', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 700,
+               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem',
+               boxShadow: '0 4px 15px rgba(79, 70, 229, 0.3)'
+             }}
+           >
+             <Zap size={14} /> {isLoading ? 'Analyzing Roster...' : 'Execute AI Auto-Draft'}
+           </button>
+         </div>
+       )}
+
        {/* Region Navigation */}
        <div style={{ display: 'flex', gap: '0.75rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
          {data.regions.map((region, idx) => (
@@ -204,6 +269,14 @@ function DraftSection({ title, icon: Icon, type, color, target, candidates, sele
                       </div>
                    </div>
                    {isSelected && <CheckCircle2 size={16} color="var(--primary)" />}
+                   
+                   {/* STRATEGIC: Semantic Relevance Indicator */}
+                   {v.semanticScore !== undefined && v.semanticScore > 0 && (
+                     <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.5rem', color: 'var(--primary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Match</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 900, color: v.semanticScore > 0.8 ? '#10B981' : '#fff' }}>{Math.round(v.semanticScore * 100)}%</div>
+                     </div>
+                   )}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.75rem' }}>

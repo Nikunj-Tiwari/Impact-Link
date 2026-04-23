@@ -1,8 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { auth } from '../services/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, auth } from '../services/firebase';
 
-export const AuthContext = createContext();
+const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState(null);
@@ -10,36 +9,10 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      
-      if (user) {
-        try {
-          await refreshUser(user);
-        } catch (err) {
-          console.error("Auth init mapping failed", err);
-          setError(err.message);
-          setLoading(false);
-        }
-      } else {
-        setAppUser(null);
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const refreshUser = async (user = firebaseUser) => {
-    if (!user) return;
+  const fetchAppUser = async (user) => {
     try {
-      setError(null);
-      // Force token refresh internally if needed via Firebase, then grab token
       const token = await user.getIdToken();
-      // Fetch /api/users/me mapped data
-      const HOST = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const res = await fetch(`${HOST}/api/users/me`, {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/users/me`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -49,29 +22,60 @@ export const AuthProvider = ({ children }) => {
         const data = await res.json();
         setAppUser(data);
       } else if (res.status === 404) {
-        // Exists in Firebase, but not yet onboarded in Mongo
-        // Signal that role needs selection
-        setAppUser({ role: null, onboardingComplete: false });
+        // User exists in Firebase but not in our DB
+        setAppUser(null);
       } else {
         throw new Error('Failed to fetch user context');
       }
     } catch (err) {
-      console.error(err);
-      throw err;
+      console.error('Auth Error:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = async () => {
-    await auth.signOut();
-    setFirebaseUser(null);
-    setAppUser(null);
+  useEffect(() => {
+    if (!auth) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      if (user) {
+        fetchAppUser(user);
+      } else {
+        setAppUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const refreshUser = () => {
+    if (firebaseUser) return fetchAppUser(firebaseUser);
+  };
+
+  const getAuthHeader = async () => {
+    if (!firebaseUser) return {};
+    const token = await firebaseUser.getIdToken();
+    return { 'Authorization': `Bearer ${token}` };
   };
 
   return (
-    <AuthContext.Provider value={{ firebaseUser, appUser, setAppUser, loading, error, refreshUser, logout }}>
+    <AuthContext.Provider value={{ 
+      firebaseUser, 
+      appUser, 
+      loading, 
+      error, 
+      refreshUser,
+      getAuthHeader
+    }}>
       {children}
     </AuthContext.Provider>
   );
 };
+
+export const useAuth = () => useContext(AuthContext);

@@ -1,78 +1,56 @@
 const CACHE_NAME = 'impactlink-v1';
-const DYNAMIC_CACHE = 'impactlink-dynamic-v1';
-
-// Assets to cache immediately on install
-const STATIC_ASSETS = [
+const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/sw.js',
-  // You'd typically add your bundled JS/CSS here, but since Vite hashes them, 
-  // we rely on dynamic caching for the bundles unless we use Workbox.
+  '/vite.svg'
 ];
 
+// ─── INSTALL: Cache static assets ─────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(ASSETS_TO_CACHE);
     })
   );
-  self.skipWaiting();
 });
 
+// ─── ACTIVATE: Cleanup old caches ──────────────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME && key !== DYNAMIC_CACHE)
-          .map((key) => caches.delete(key))
+        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       );
     })
   );
-  self.clients.claim();
 });
 
-// Network First for API calls, Cache First for static assets
+// ─── FETCH: Cache-first for assets, Network-first for API ──────────────────
 self.addEventListener('fetch', (event) => {
-  const requestUrl = new URL(event.request.url);
+  const { request } = event;
+  const url = new URL(request.url);
 
-  // API calls
-  if (requestUrl.pathname.startsWith('/api/')) {
-    // Only cache GET requests. POST/PATCH mutations are handled locally
-    // in components, but a full IndexedDB sync queue would intercept them here.
-    if (event.request.method === 'GET') {
-      event.respondWith(
-        fetch(event.request)
-          .then((response) => {
-            const resClone = response.clone();
-            caches.open(DYNAMIC_CACHE).then((cache) => cache.put(event.request, resClone));
-            return response;
-          })
-          .catch(() => caches.match(event.request))
-      );
-      return;
-    }
+  // API Requests: Network-first to ensure live tactical data
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api')) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clonedResponse = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, clonedResponse);
+          });
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
   }
 
-  // Static Assets (Cache First, fallback to Network)
+  // Static Assets: Cache-first
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
-      
-      return fetch(event.request).then((response) => {
-        // Cache dynamic UI assets
-        if (event.request.method === 'GET' && !requestUrl.pathname.startsWith('/api/')) {
-           const resClone = response.clone();
-           caches.open(DYNAMIC_CACHE).then((cache) => cache.put(event.request, resClone));
-        }
-        return response;
-      }).catch(() => {
-        // If entirely offline and requesting root, return cached index
-        if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-      });
+    caches.match(request).then((response) => {
+      return response || fetch(request);
     })
   );
 });

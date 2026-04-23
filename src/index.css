@@ -1,5 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import url('./styles/volunteer.css');
 
 :root {
   /* Linear-inspired Ultra-Dark Theme with Premium Colorful Accents */
@@ -460,4 +459,82 @@ input[type="range"]::-webkit-slider-thumb {
 
 .project-actions {
   transition: opacity 0.2s ease;
+}
+
+/* ── VOLUNTEER DESIGN SYSTEM TOKENS ── */
+:root {
+  --v-amber: #F59E0B;
+  --v-amber-dim: rgba(245, 158, 11, 0.1);
+  --v-emerald: #10B981;
+  --v-emerald-dim: rgba(16, 185, 129, 0.1);
+  --v-indigo: #818CF8;
+  --v-card-bg: #111111;
+  --v-border: rgba(255, 255, 255, 0.06);
+}
+
+/* Volunteer Specific Utilities */
+.v-touch-target {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 1.5rem;
+}
+
+.auth-modal {
+  width: 100%;
+  max-width: 480px;
+  background: #0a0a0a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 2.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+
+.info-modal {
+  max-width: 600px !important;
+}
+
+.close-auth {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.close-auth:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+@keyframes vPulse {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.v-pulse-ring {
+  position: absolute;
+  border-radius: 50%;
+  animation: vPulse 2s infinite ease-out;
 }

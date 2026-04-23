@@ -1,180 +1,146 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { volunteerApi } from '../../services/volunteerApi';
-import { User, Truck, Phone, Award, Loader2, CheckCircle2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  User, 
+  Trash2, 
+  Plus, 
+  Truck, 
+  ShieldCheck, 
+  ChevronRight,
+  Info,
+  Check
+} from 'lucide-react';
+import useAuth from '../../hooks/useAuth';
+import { updateMyProfile } from '../../services/volunteerApi';
 
 export default function ProfileTab() {
-  const { appUser } = useAuth();
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
+  const { appUser, refreshUser } = useAuth();
+  const volInfo = appUser?.linkedVolunteerId;
 
-  useEffect(() => {
-    fetchProfile();
-  }, [appUser]);
+  const [skills, setSkills] = useState(volInfo?.skills || []);
+  const [vehicle, setVehicle] = useState(volInfo?.vehicleType || 'none');
+  const [isSaving, setIsSaving] = useState(false);
 
-  const fetchProfile = async () => {
+  const availableSkills = [
+    'first_aid', 'medical', 'search_rescue', 'logistics',
+    'communication', 'translation', 'counseling', 'driving',
+    'heavy_vehicle', 'water_rescue', 'shelter_setup', 'food_distribution'
+  ];
+
+  const toggleSkill = (skill) => {
+    setSkills(prev => 
+      prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]
+    );
+  };
+
+  const saveProfile = async () => {
+    setIsSaving(true);
     try {
-      const data = await volunteerApi.getProfile();
-      setProfile(data);
+      await updateMyProfile({ skills, vehicleType: vehicle });
+      await refreshUser();
     } catch (err) {
-      console.error(err);
-      setMessage('Failed to load profile');
+      console.error('Profile update failed:', err);
     } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   };
-
-  const handleSave = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage('');
-    try {
-      // Send allowed fields only
-      const updates = {
-        vehicleType: profile.vehicleType,
-        vehicleCapacity: profile.vehicleCapacity,
-        travelRadiusKm: profile.travelRadiusKm,
-        contactPhone: profile.contactPhone,
-        emergencyContact: profile.emergencyContact
-      };
-      await volunteerApi.updateProfile(updates);
-      setMessage('Profile updated successfully!');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (error) {
-      setMessage('Error updating profile');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading || !profile) {
-    return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-dim)' }}>Loading Profile...</div>;
-  }
 
   return (
-    <div style={{ padding: '1.25rem', color: '#fff' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <User size={24} color="var(--v-amber)" />
-        <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Tactical Profile</h2>
-      </div>
-
-      {message && (
-        <div style={{ padding: '0.75rem', background: 'rgba(52, 211, 153, 0.1)', color: '#10b981', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-          <CheckCircle2 size={16} /> {message}
-        </div>
-      )}
-
-      {/* Stats Summary */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-        <div style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1rem', textAlign: 'center' }}>
-           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--v-amber)' }}>{profile.missionsCompleted || profile.totalMissionsCompleted || 0}</div>
-           <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Completed</div>
-        </div>
-        <div style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1rem', textAlign: 'center' }}>
-           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-             {profile.lastRating ? profile.lastRating.toFixed(1) : 'N/A'} <Award size={16} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <header style={{ textAlign: 'center', padding: '1rem 0' }}>
+         <div style={{ 
+           width: '100px', height: '100px', borderRadius: '32px',
+           background: 'linear-gradient(45deg, #111, #222)', margin: '0 auto 1.5rem',
+           display: 'flex', alignItems: 'center', justifyContent: 'center',
+           border: '1px solid rgba(255,255,255,0.08)', position: 'relative'
+         }}>
+           <User size={48} color="var(--text-dim)" />
+           <div style={{ 
+             position: 'absolute', bottom: '-5px', right: '-5px',
+             background: '#10B981', width: '28px', height: '28px',
+             borderRadius: '50%', border: '4px solid #000',
+             display: 'flex', alignItems: 'center', justifyContent: 'center'
+           }}>
+             <ShieldCheck size={14} color="#fff" />
            </div>
-           <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Rating</div>
+         </div>
+         <h1 style={{ fontSize: '1.75rem', fontWeight: 800 }}>{appUser?.displayName}</h1>
+         <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+           Tactical ID: {volInfo?._id?.toString().slice(-8).toUpperCase()}
+         </p>
+      </header>
+
+      {/* Skills Selection */}
+      <section>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Tactical Capabilities</h3>
+          <Info size={14} color="var(--text-dim)" />
         </div>
-      </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+          {availableSkills.map(skill => (
+            <button
+              key={skill}
+              onClick={() => toggleSkill(skill)}
+              style={{
+                padding: '0.6rem 1.25rem', borderRadius: '100px', fontSize: '0.85rem',
+                fontWeight: 600, border: '1px solid',
+                borderColor: skills.includes(skill) ? '#F59E0B' : 'rgba(255,255,255,0.1)',
+                background: skills.includes(skill) ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                color: skills.includes(skill) ? '#F59E0B' : 'var(--text-dim)',
+                transition: 'all 0.2s ease', cursor: 'pointer', textTransform: 'capitalize'
+              }}
+            >
+              {skill.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
+      </section>
 
-      <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        
-        {/* Logistics Section */}
-        <section>
-          <h3 style={{ fontSize: '0.9rem', color: 'var(--v-amber)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Truck size={16} /> Logistics & Setup
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>Vehicle Type</label>
-              <select 
-                value={profile.vehicleType || 'none'} 
-                onChange={(e) => setProfile({...profile, vehicleType: e.target.value})}
-                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-              >
-                <option value="none">None</option>
-                <option value="motorcycle">Motorcycle / Bike</option>
-                <option value="car">Car (Standard)</option>
-                <option value="suv">SUV / 4x4</option>
-                <option value="van">Van</option>
-                <option value="truck">Truck (Heavy)</option>
-              </select>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>Payload Cap (kg)</label>
-                <input 
-                  type="number" min="0" 
-                  value={profile.vehicleCapacity || 0}
-                  onChange={(e) => setProfile({...profile, vehicleCapacity: parseInt(e.target.value) || 0})}
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-                />
+      {/* Transport Class */}
+      <section>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1.25rem' }}>Transport Profile</h3>
+        <div style={{ 
+          background: '#111', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)',
+          overflow: 'hidden'
+        }}>
+          {['none', 'car', 'suv', 'truck', 'van'].map(t => (
+            <div 
+              key={t}
+              onClick={() => setVehicle(t)}
+              style={{
+                padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem',
+                borderBottom: '1px solid rgba(255,255,255,0.02)', cursor: 'pointer',
+                background: vehicle === t ? 'rgba(255,255,255,0.02)' : 'transparent'
+              }}
+            >
+              <div style={{ 
+                width: '40px', height: '40px', borderRadius: '10px',
+                background: vehicle === t ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.03)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Truck size={20} color={vehicle === t ? '#F59E0B' : 'var(--text-dim)'} />
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>Range Radius (km)</label>
-                <input 
-                  type="number" min="5" max="500" 
-                  value={profile.travelRadiusKm || profile.travelRadius || 20}
-                  onChange={(e) => setProfile({...profile, travelRadiusKm: parseInt(e.target.value) || 20})}
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-                />
-              </div>
+              <div style={{ flex: 1, textTransform: 'capitalize', fontWeight: 600 }}>{t}</div>
+              {vehicle === t && <Check size={20} color="#F59E0B" />}
             </div>
-          </div>
-        </section>
+          ))}
+        </div>
+      </section>
 
-        {/* Contact Section */}
-        <section>
-          <h3 style={{ fontSize: '0.9rem', color: 'var(--v-amber)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Phone size={16} /> Contact Details
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>Primary Phone</label>
-              <input 
-                type="text" 
-                value={profile.contactPhone || ''}
-                onChange={(e) => setProfile({...profile, contactPhone: e.target.value})}
-                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-              />
-            </div>
-            
-            <div style={{ marginTop: '0.5rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-               <label style={{ display: 'block', fontSize: '0.85rem', color: '#fff', marginBottom: '0.75rem' }}>Emergency Contact</label>
-               <input 
-                type="text" placeholder="Name"
-                value={profile.emergencyContact?.name || ''}
-                onChange={(e) => setProfile({...profile, emergencyContact: { ...profile.emergencyContact, name: e.target.value }})}
-                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', marginBottom: '0.5rem' }}
-              />
-               <input 
-                type="text" placeholder="Phone"
-                value={profile.emergencyContact?.phone || ''}
-                onChange={(e) => setProfile({...profile, emergencyContact: { ...profile.emergencyContact, phone: e.target.value }})}
-                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-              />
-            </div>
-          </div>
-        </section>
+      <button
+        onClick={saveProfile}
+        disabled={isSaving}
+        style={{
+          width: '100%', padding: '1.25rem', borderRadius: '100px',
+          background: 'var(--primary)', color: '#fff', fontSize: '1.1rem',
+          fontWeight: 700, border: 'none', cursor: 'pointer',
+          marginTop: '1rem', boxShadow: '0 10px 20px rgba(99, 102, 241, 0.2)'
+        }}
+      >
+        {isSaving ? 'Syncing Profile...' : 'Save Configuration'}
+      </button>
 
-        <button
-          type="submit"
-          disabled={saving}
-          style={{
-            width: '100%', padding: '1rem', borderRadius: '8px', border: 'none',
-            background: 'var(--primary)', color: '#fff', fontSize: '1rem', fontWeight: 600,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-            cursor: saving ? 'not-allowed' : 'pointer',
-            opacity: saving ? 0.7 : 1,
-            marginTop: '1rem'
-          }}
-        >
-          {saving ? <Loader2 size={18} className="animate-spin" /> : 'Save Profile'}
-        </button>
-      </form>
+      <div style={{ height: '2rem' }} /> {/* Padding for bottom navigation */}
     </div>
   );
 }

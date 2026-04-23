@@ -1,27 +1,28 @@
 const User = require('../models/User');
 
+/**
+ * Middleware to restrict routes to specific roles.
+ * Must be used AFTER verifyToken middleware.
+ */
 const checkRole = (...allowedRoles) => async (req, res, next) => {
   try {
-    if (!req.user || !req.user.uid) {
-      return res.status(401).json({ error: 'Unauthorized: No token provided' });
-    }
-
+    // req.user is populated by verifyToken from Firebase
     const user = await User.findOne({ uid: req.user.uid });
     
-    // If no user document exists, or if role is null when not allowed
     if (!user) {
-      return res.status(403).json({ error: 'User profile not found. Please complete setup.' });
+      return res.status(404).json({ error: 'User record not found in database. Complete onboarding at /setup.' });
     }
 
     if (!allowedRoles.includes(user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+      return res.status(403).json({ error: `Access denied. Role '${user.role}' lacks sufficient permissions.` });
     }
-    
-    req.impactUser = user;   // attach to request for downstream use
+
+    // Attach full database user object to request
+    req.impactUser = user;
     next();
   } catch (err) {
-    console.error('Role check failed:', err);
-    res.status(500).json({ error: 'Role check failed' });
+    console.error('Role check middleware error:', err);
+    res.status(500).json({ error: 'Authorization validation failed.' });
   }
 };
 

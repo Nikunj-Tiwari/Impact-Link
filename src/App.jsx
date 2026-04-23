@@ -2,11 +2,14 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
+import AuthForm from './pages/AuthForm';
 import VolunteerDashboard from './pages/VolunteerDashboard';
-import AuthForm from './components/Auth/AuthForm';
-import RequireRole from './components/Auth/RequireRole';
-import RoleSelectionModal from './components/Auth/RoleSelectionModal';
 
+// Components
+import RequireRole from './components/auth/RequireRole';
+import RoleSelectionModal from './components/auth/RoleSelectionModal';
+
+// Context
 import { ProjectProvider } from './context/ProjectContext';
 import { AuthProvider } from './context/AuthContext';
 
@@ -16,34 +19,44 @@ function App() {
       <ProjectProvider>
         <BrowserRouter>
           <Routes>
-          {/* Public Entry Point */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/auth" element={<AuthForm />} />
-          <Route path="/setup" element={<RoleSelectionModal />} />
-          
-          {/* Protected Command Center */}
-          <Route 
-            path="/dashboard" 
-            element={
-              <RequireRole role="Administrator">
-                <Dashboard />
-              </RequireRole>
-            } 
-          />
+            {/* Public Entry Point */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/auth" element={<AuthForm />} />
+            
+            {/* Setup Flow (Required for role selection) */}
+            <Route 
+              path="/setup" 
+              element={
+                <RequireRole>
+                   {/* If RequireRole lets them through but role is null, show modal */}
+                   <RoleSelectionModal />
+                </RequireRole>
+              } 
+            />
 
-          {/* Protected Volunteer Portal */}
-          <Route 
-            path="/volunteer" 
-            element={
-              <RequireRole role="Volunteer">
-                <VolunteerDashboard />
-              </RequireRole>
-            } 
-          />
+            {/* Tactical Command Center (Administrator Only) */}
+            <Route 
+              path="/dashboard" 
+              element={
+                <RequireRole role="Administrator">
+                  <Dashboard />
+                </RequireRole>
+              } 
+            />
 
-          {/* Catch-all Redirect */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            {/* Volunteer Portal (Volunteer Only) */}
+            <Route 
+              path="/volunteer" 
+              element={
+                <RequireRole role="Volunteer">
+                  <VolunteerDashboard />
+                </RequireRole>
+              } 
+            />
+
+            {/* Catch-all Redirect */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </BrowserRouter>
       </ProjectProvider>
     </AuthProvider>
