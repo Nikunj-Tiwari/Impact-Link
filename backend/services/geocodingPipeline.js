@@ -101,8 +101,6 @@ const runGeocodingPipeline = async (datasetId, zones = [], projectId = null, zon
   const records = await Beneficiary.find({ datasetId: datasetObjectId });
   const total = records.length;
   const startTime = Date.now();
-  let geocodedCount = 0;
-  let failedCount = 0;
 
   // STRATEGIC: Mark the project zone as 'processing' immediately to provide dashboard feedback
   if (projectObjectId && zoneIndex !== null && zoneIndex !== undefined) {
@@ -162,19 +160,72 @@ const runGeocodingPipeline = async (datasetId, zones = [], projectId = null, zon
               console.log(`[PIPELINE] Row ${record.rowIndex}: Cache HIT.`);
               geoResult = { lat: cached.lat, lng: cached.lng, formattedAddress: cached.formattedAddress, placeId: cached.placeId, confidenceScore: cached.confidenceScore, geocodeMethod: 'geocoded' };
             } else {
-              console.log(`[PIPELINE] Row ${record.rowIndex}: Calling Google API...`);
-              const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
-                params: { address: normalized, key: process.env.GOOGLE_MAPS_API_KEY, region: 'in', language: 'en' },
-                timeout: 5000 
-              });
+              let apiSuccess = false;
 
-              if (response.data.status === 'OK') {
-                console.log(`[PIPELINE] Row ${record.rowIndex}: API Success.`);
-                const result = response.data.results[0];
-                geoResult = { lat: result.geometry.location.lat, lng: result.geometry.location.lng, formattedAddress: result.formatted_address, placeId: result.place_id, confidenceScore: computeConfidence(result), geocodeMethod: 'geocoded' };
+              // 1. Try Google Maps if Key Exists
+              if (process.env.GOOGLE_MAPS_API_KEY) {
+                console.log(`[PIPELINE] Row ${record.rowIndex}: Calling Google API...`);
+                try {
+                  const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+                    params: { address: normalized, key: process.env.GOOGLE_MAPS_API_KEY, region: 'in', language: 'en' },
+                    timeout: 5000 
+                  });
+                  if (response.data.status === 'OK' && response.data.results.length > 0) {
+                    console.log(`[PIPELINE] Row ${record.rowIndex}: Google API Success.`);
+                    const result = response.data.results[0];
+                    geoResult = { 
+                      lat: result.geometry.location.lat, 
+                      lng: result.geometry.location.lng, 
+                      formattedAddress: result.formatted_address, 
+                      placeId: result.place_id, 
+                      confidenceScore: computeConfidence(result), 
+                      geocodeMethod: 'google_geocoded' 
+                    };
+                    apiSuccess = true;
+                  } else {
+                    console.log(`[PIPELINE] Row ${record.rowIndex}: Google API Failed/No Results (${response.data.status}).`);
+                  }
+                } catch (googleErr) {
+                  console.error(`[PIPELINE] Row ${record.rowIndex}: Google API Error -`, googleErr.message);
+                }
+              }
+
+              // 2. Fallback to OpenStreetMap Nominatim (High Accuracy, No API Key)
+              if (!apiSuccess) {
+                console.log(`[PIPELINE] Row ${record.rowIndex}: Calling OpenStreetMap Nominatim API...`);
+                try {
+                  // Respect Nominatim Usage Policy (max 1 req/sec)
+                  await new Promise(r => setTimeout(r, 1000));
+                  
+                  const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+                    params: { q: normalized, format: 'json', limit: 1 },
+                    headers: { 'User-Agent': 'ImpactLink-App/1.0 (internal-allocation-engine)' },
+                    timeout: 8000
+                  });
+
+                  if (response.data && response.data.length > 0) {
+                    console.log(`[PIPELINE] Row ${record.rowIndex}: Nominatim API Success.`);
+                    const result = response.data[0];
+                    geoResult = { 
+                      lat: parseFloat(result.lat), 
+                      lng: parseFloat(result.lon), 
+                      formattedAddress: result.display_name, 
+                      placeId: `osm-${result.place_id}`, 
+                      confidenceScore: 0.8, // Good but open-source baseline
+                      geocodeMethod: 'osm_geocoded' 
+                    };
+                    apiSuccess = true;
+                  } else {
+                    console.log(`[PIPELINE] Row ${record.rowIndex}: Nominatim API No Results.`);
+                  }
+                } catch (osmErr) {
+                  console.error(`[PIPELINE] Row ${record.rowIndex}: Nominatim API Error -`, osmErr.message);
+                }
+              }
+
+              if (apiSuccess && geoResult) {
                 await GeocodingCache.findOneAndUpdate({ normalizedAddress: normalized }, { $set: { ...geoResult, cachedAt: new Date() } }, { upsert: true });
               } else {
-                console.log(`[PIPELINE] Row ${record.rowIndex}: API No Results.`);
                 geoResult = { geocodeMethod: 'unresolved' };
               }
             }
@@ -189,20 +240,29 @@ const runGeocodingPipeline = async (datasetId, zones = [], projectId = null, zon
             console.log(`[PIPELINE] Row ${record.rowIndex}: Geocoding failed for "${record.rawLocation}". Triggering Zonal Fallback...`);
             const Project = require('../models/Project');
             const project = await Project.findById(projectObjectId);
-            const zoneName = project?.regions?.[zoneIndex]?.name || 'Mission Area';
+            const zoneRegion = project?.regions?.[zoneIndex];
             
-            const fallbackRes = await require('./geocodingService').geocodeAddress(zoneName);
-            if (fallbackRes?.lat) {
-              geoResult = { ...fallbackRes, geocodeMethod: 'zonal_fallback', confidenceScore: 0.3 };
+            if (zoneRegion && zoneRegion.center?.lat && zoneRegion.center?.lng) {
+               // Apply a slight random jitter to prevent stacking on the exact center
+               const jitterLat = (Math.random() - 0.5) * 0.02;
+               const jitterLng = (Math.random() - 0.5) * 0.02;
+               geoResult = { 
+                 lat: zoneRegion.center.lat + jitterLat, 
+                 lng: zoneRegion.center.lng + jitterLng, 
+                 geocodeMethod: 'zonal_fallback', 
+                 confidenceScore: 0.3 
+               };
             } else {
               geoResult = { geocodeMethod: 'unresolved' };
             }
           }
 
           console.log(`[PIPELINE] Row ${record.rowIndex}: Saving to DB...`);
+          if (geoResult) geoResult.geocodedAt = new Date();
+          
           await Beneficiary.collection.updateOne(
             { _id: record._id },
-            { $set: { geo: geoResult, zoneAssignment, 'geo.geocodedAt': new Date(), ...(projectObjectId && { projectId: projectObjectId }) } }
+            { $set: { geo: geoResult, zoneAssignment, ...(projectObjectId && { projectId: projectObjectId }) } }
           );
         } catch (err) {
           console.error(`[PIPELINE] Row ${record.rowIndex} FATAL ERROR:`, err.message);
@@ -296,8 +356,6 @@ const runGeocodingPipeline = async (datasetId, zones = [], projectId = null, zon
     {
       $set: {
         'processingStats.status': 'complete',
-        'processingStats.geocodedCount': geocodedCount,
-        'processingStats.failedCount': failedCount,
         'processingStats.processingTimeMs': Date.now() - startTime
       }
     }

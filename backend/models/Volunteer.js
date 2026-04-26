@@ -5,8 +5,9 @@ const volunteerSchema = new mongoose.Schema({
   name: { type: String, required: true },
   status: { type: String, enum: ['Active', 'Deployed', 'Inactive'], default: 'Active' },
   locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', required: true },
-  skills: [{ type: String }],
   contactPhone: { type: String, required: true },
+  email: { type: String, unique: true, sparse: true }, // Added for test login
+  password: { type: String, default: '123456' },      // Added for test login
   lastActive: { type: Date, default: Date.now },
   currentAssignment: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', default: null },
   

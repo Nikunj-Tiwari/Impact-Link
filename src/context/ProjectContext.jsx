@@ -12,7 +12,7 @@ export const ProjectProvider = ({ children }) => {
     loadProjects();
   }, []);
 
-  const loadProjects = async () => {
+  const loadProjects = async (retries = 3) => {
     try {
       setLoading(true);
       const data = await fetchProjects();
@@ -22,10 +22,14 @@ export const ProjectProvider = ({ children }) => {
         const globalProj = data.find(p => p.scope === 'Global') || data[0];
         setCurrentProject(globalProj);
       }
+      setLoading(false); // Success!
     } catch (err) {
-      console.error('Failed to load projects', err);
-    } finally {
-      setLoading(false);
+      console.error(`Failed to load projects. Retries left: ${retries}`, err);
+      if (retries > 0) {
+        setTimeout(() => loadProjects(retries - 1), 2000);
+      } else {
+        setLoading(false); // Gave up
+      }
     }
   };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, HandHeart, Phone, MapPin, Zap, ShieldCheck, Award, Star, TrendingUp, CheckCircle2, Clock, Calendar, Truck, Navigation, Activity } from 'lucide-react';
+import { X, HandHeart, Phone, MapPin, Zap, ShieldCheck, Award, Star, TrendingUp, CheckCircle2, Clock, Calendar, Truck, Navigation, Activity, Mail, Copy, Check } from 'lucide-react';
 import { fetchLocations } from '../../services/api';
 
 const ScoreCard = ({ label, value, icon: Icon, color, subValue }) => (
@@ -33,6 +33,7 @@ const DetailPanel = ({ label, icon: Icon, children, style = {} }) => (
 
 export default function VolunteerModal({ isOpen, onClose, initialData = null }) {
   const [locations, setLocations] = useState([]);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -41,6 +42,12 @@ export default function VolunteerModal({ isOpen, onClose, initialData = null }) 
         .catch(err => console.error("Failed to fetch locations:", err));
     }
   }, [isOpen]);
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (!isOpen || !initialData) return null;
 
@@ -79,6 +86,24 @@ export default function VolunteerModal({ isOpen, onClose, initialData = null }) 
               </div>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}>
                 Operational Profile: {initialData._id}
+                {initialData.email && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem', color: 'var(--primary)', fontWeight: 600 }}>
+                    <Mail size={12} /> {initialData.email}
+                    <button 
+                      onClick={() => copyToClipboard(initialData.email)}
+                      style={{ 
+                        background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', 
+                        padding: '0.25rem', cursor: 'pointer', display: 'flex', alignItems: 'center', 
+                        gap: '0.25rem', color: copied ? 'var(--success)' : 'var(--text-dim)',
+                        transition: 'all 0.2s', marginLeft: '0.5rem'
+                      }}
+                      title="Copy Email"
+                    >
+                      {copied ? <Check size={10} /> : <Copy size={10} />}
+                      {copied && <span style={{ fontSize: '0.6rem' }}>Copied!</span>}
+                    </button>
+                  </div>
+                )}
               </p>
             </div>
           </div>

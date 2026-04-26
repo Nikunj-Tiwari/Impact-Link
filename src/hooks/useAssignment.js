@@ -20,7 +20,8 @@ export default function useAssignment(pollingInterval = 30000) {
       setAssignment({
         id: profile.currentAssignmentId,
         status: profile.assignmentStatus,
-        details: profile.assignmentDetails // Assuming populated on the backend or fetched separately
+        details: profile.assignmentDetails,
+        fullProfile: profile
       });
       setError(null);
     } catch (err) {
@@ -61,6 +62,8 @@ export default function useAssignment(pollingInterval = 30000) {
 
   return {
     assignment,
+    profile: assignment?.profile, // Helper access
+    fullProfile: assignment?.fullProfile,
     loading,
     error,
     updateStatus,

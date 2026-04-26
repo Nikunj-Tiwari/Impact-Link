@@ -43,6 +43,7 @@ export const logIn = (email, password) => {
 };
 
 export const logout = () => {
+  localStorage.removeItem('test-token');
   if (!auth) return Promise.resolve();
   return signOut(auth);
 };

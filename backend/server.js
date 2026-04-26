@@ -10,6 +10,7 @@ const Volunteer = require('./models/Volunteer');
 const AuditLog = require('./models/AuditLog');
 const Project = require('./models/Project');
 const Supply = require('./models/Supply');
+const User = require('./models/User'); // Added for test login sync
 const { dbscan } = require('./services/clustering');
 const { encrypt, decrypt } = require('./services/encryption');
 const volunteerRouter = require('./routes/volunteer');
@@ -92,12 +93,30 @@ const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.split('Bearer ')[1];
   
-  if (!admin.apps || admin.apps.length === 0) {
-    return next(); // Global bypass already set req.user
-  }
-
   if (!token) {
     return res.status(401).json({ error: 'No token provided' });
+  }
+
+  // STRATEGIC: Local Test Token Bypass
+  if (token.startsWith('test.')) {
+    try {
+      const base64Payload = token.split('.')[1];
+      const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString());
+      req.user = { 
+        uid: payload.uid || payload.user_id, 
+        email: payload.email, 
+        name: payload.email?.split('@')[0] || 'test-user'
+      };
+      return next();
+    } catch (e) {
+      console.warn('[AUTH] Failed to decode test token payload:', e.message);
+    }
+  }
+
+  if (!admin.apps || admin.apps.length === 0) {
+    // If no Firebase, req.user might have been set by global bypass
+    if (req.user) return next();
+    return res.status(401).json({ error: 'Identity context missing.' });
   }
 
   try {
@@ -129,6 +148,53 @@ const auditPII = (action) => async (req, res, next) => {
     next();
   }
 };
+
+// 7. Test Login for Volunteers
+app.post('/api/volunteer/test-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const volunteer = await Volunteer.findOne({ email, password });
+    
+    if (!volunteer) {
+      return res.status(401).json({ error: 'Invalid mission credentials.' });
+    }
+
+    // Ensure a User record exists and is linked
+    let user = await User.findOne({ linkedVolunteerId: volunteer._id });
+    if (!user) {
+      user = new User({
+        uid: `test-vol-${volunteer._id}`,
+        email: volunteer.email,
+        displayName: volunteer.name,
+        role: 'Volunteer',
+        linkedVolunteerId: volunteer._id,
+        onboardingComplete: true
+      });
+      await user.save();
+    }
+
+    // Generate a mock JWT (unverified Base64 payload)
+    const payload = { 
+      uid: user.uid, 
+      email: user.email,
+      user_id: user.uid
+    };
+    const mockToken = `test.${Buffer.from(JSON.stringify(payload)).toString('base64')}.test`;
+
+    res.json({ 
+      token: mockToken, 
+      user: {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        role: user.role,
+        linkedVolunteerId: user.linkedVolunteerId
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // 8. Volunteer & User Identity Routes
 app.use('/api', verifyToken, volunteerRouter);
@@ -197,7 +263,9 @@ app.post('/api/beneficiaries', verifyToken, auditPII('CREATE_PII'), async (req, 
 // 2.5 Projects
 app.get('/api/projects', async (req, res) => {
   try {
+    console.log(`[API] GET /api/projects hit by ${req.ip}`);
     const projects = await Project.find().sort({ createdAt: -1 });
+    console.log(`[API] Returning ${projects.length} projects`);
     res.json(projects);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -206,6 +274,11 @@ app.get('/api/projects', async (req, res) => {
 
 app.post('/api/projects', verifyToken, async (req, res) => {
   try {
+    const existing = await Project.findOne({ name: { $regex: new RegExp(`^${req.body.name}$`, 'i') } });
+    if (existing) {
+      return res.status(400).json({ error: 'A project with this exact name already exists.' });
+    }
+
     const newProj = new Project(req.body);
     const saved = await newProj.save();
 
@@ -711,8 +784,8 @@ const seedData = async () => {
 
     // 3. Create Volunteers
     await Volunteer.insertMany([
-      { projectIds: [globalProject._id], name: 'Rahul Sharma', status: 'Deployed', locationId: locs[0]._id, contactPhone: '+91 98XXX XXXX1', skills: ['First Aid', 'Logistics'] },
-      { projectIds: [globalProject._id], name: 'Priya Singh', status: 'Active', locationId: locs[1]._id, contactPhone: '+91 98XXX XXXX2', skills: ['Nursing'] }
+      { projectIds: [globalProject._id], name: 'Rahul Sharma', status: 'Deployed', locationId: locs[0]._id, contactPhone: '+91 98XXX XXXX1', email: 'rahul@impactlink.dev', password: '123456', skills: ['First Aid', 'Logistics'] },
+      { projectIds: [globalProject._id], name: 'Priya Singh', status: 'Active', locationId: locs[1]._id, contactPhone: '+91 98XXX XXXX2', email: 'priya@impactlink.dev', password: '123456', skills: ['Nursing'] }
     ]);
 
     console.log('Database initialized with Project-Based architecture.');

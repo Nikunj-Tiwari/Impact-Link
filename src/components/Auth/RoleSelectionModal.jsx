@@ -18,7 +18,7 @@ export default function RoleSelectionModal() {
 
     try {
       const headers = await getAuthHeader();
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/users/setup`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/setup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

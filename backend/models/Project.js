@@ -90,7 +90,8 @@ const projectSchema = new mongoose.Schema({
     priority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
     beneficiaryType: { type: String },
     approvalWorkflow: { type: String, default: 'Standard' },
-    notificationMethod: { type: String, default: 'Email+App' }
+    notificationMethod: { type: String, default: 'Email+App' },
+    notificationsEnabled: { type: Boolean, default: false }
   },
 
   createdAt: { type: Date, default: Date.now },

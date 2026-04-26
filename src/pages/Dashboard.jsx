@@ -214,14 +214,38 @@ export default function Dashboard() {
   }, [incidents]);
 
 
+  // Combine incidents and beneficiaries into a unified spatial array for map and clustering
+  const mapPoints = useMemo(() => {
+    const validIncidents = incidents.map(i => ({ ...i, __type: 'incident' }));
+    
+    const validBeneficiaries = beneficiaries
+      .filter(b => b.geo && b.geo.lat && b.geo.lng)
+      .map(b => ({
+        ...b,
+        id: b._id,
+        title: b.name || 'Beneficiary',
+        location: b.rawLocation || 'Unknown Location',
+        severity: b.needSeverity === 'high' ? 8 : b.needSeverity === 'medium' ? 5 : 2,
+        resourceGap: 5,
+        frequency: 1,
+        timeSensitivity: b.calculatedUrgency || 5,
+        lat: b.geo.lat,
+        lng: b.geo.lng,
+        __type: 'beneficiary',
+        eventType: b.primaryNeed || 'Beneficiary'
+      }));
+      
+    return [...validIncidents, ...validBeneficiaries];
+  }, [incidents, beneficiaries]);
+
   // Reactive Strategic Clustering (separate from heatmap)
   const strategicClusters = useMemo(() => {
-    if (incidents.length === 0) return { points: [], hotspots: [] };
+    if (mapPoints.length === 0) return { points: [], hotspots: [] };
     // Increased EPS to 1.5 for broader state-level clustering
     // Increased minSamples to 3 to ignore low-density outliers
-    const labels = dbscan(incidents, 1.5, 3); 
-    return aggregateClusters(incidents, labels);
-  }, [incidents]);
+    const labels = dbscan(mapPoints, 1.5, 3); 
+    return aggregateClusters(mapPoints, labels);
+  }, [mapPoints]);
 
   const handleLogout = async () => {
     await logout();
@@ -512,10 +536,11 @@ export default function Dashboard() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'auto' }}>
           <KineticMap 
             isImmersive={true} 
-            incidents={incidents} 
+            incidents={mapPoints} 
             activeDispatches={activeDispatches} 
             clusters={strategicClusters} 
             projectRegions={currentProject?.regions}
+            volunteers={volunteers}
           />
         </div>
       )}
@@ -545,7 +570,7 @@ export default function Dashboard() {
           >
             {activeTab === 'overview' && (
               <OverviewTab 
-                incidents={incidents} 
+                incidents={mapPoints} 
                 setIncidents={setIncidents} 
                 activeDispatches={activeDispatches} 
                 setActiveDispatches={setActiveDispatches} 
@@ -556,6 +581,7 @@ export default function Dashboard() {
                 allocationResult={allocationResult}
                 criticalUnmet={criticalUnmet}
                 allocationAdvice={allocationAdvice}
+                volunteers={volunteers}
               />
             )}
             {activeTab === 'analysis' && <AnalysisTab incidents={incidents} volunteers={volunteers} />}
@@ -983,6 +1009,7 @@ function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispa
           selectedIncident={selectedIncident} 
           activeDispatches={activeDispatches} 
           clusters={clusters}
+          volunteers={volunteers}
         />
       </div>
 
@@ -1330,7 +1357,7 @@ function BeneficiariesTab({ beneficiaries = [], onView }) {
                 </td>
                 <td style={{ padding: '1rem', color: '#fff' }}>{b.firstName} {b.lastName}</td>
                 <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{b.age} / {b.gender}</td>
-                <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{b.village || b.geo?.formattedAddress?.split(',')[0] || 'Unknown Region'}</td>
+                <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{b.village || b.geo?.formattedAddress?.split(',')[0] || b.rawLocation || 'Unknown Region'}</td>
                 <td style={{ padding: '1rem', fontFamily: 'monospace', color: 'var(--success)' }}>{b.aadharMasked ? `XXXX-XXXX-${b.aadharMasked}` : 'N/A'}</td>
                 <td style={{ padding: '1rem', color: 'var(--text-dim)' }}>{b.registeredAt ? new Date(b.registeredAt).toLocaleDateString() : (b.createdAt ? new Date(b.createdAt).toLocaleDateString() : 'N/A')}</td>
                 <td style={{ padding: '1rem', textAlign: 'right' }}>

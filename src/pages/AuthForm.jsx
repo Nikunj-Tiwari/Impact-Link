@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { signUp, logIn, resetPassword } from '../services/firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, Loader2, ArrowRight, Globe } from 'lucide-react';
+import useAuth from '../hooks/useAuth';
 
 export default function AuthForm() {
   const [isLogin, setIsLogin] = useState(true);
@@ -11,6 +12,7 @@ export default function AuthForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
+  const { loginLocal } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/setup";
@@ -21,6 +23,27 @@ export default function AuthForm() {
     setError(null);
 
     try {
+      // 1. Try Test Login First (for 123456 password testing)
+      if (isLogin && password === '123456') {
+        try {
+          const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/volunteer/test-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            loginLocal(data.token, data.user);
+            navigate(data.user.role === 'Administrator' ? '/dashboard' : '/volunteer', { replace: true });
+            return;
+          }
+        } catch (testErr) {
+          console.warn('Test login failed, falling back to Firebase:', testErr);
+        }
+      }
+
+      // 2. Fallback to Firebase
       if (isLogin) {
         await logIn(email, password);
       } else {

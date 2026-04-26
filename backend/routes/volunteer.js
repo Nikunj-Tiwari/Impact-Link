@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const Volunteer = require('../models/Volunteer');
+const Project = require('../models/Project');
 const MissionHistory = require('../models/MissionHistory');
 const checkRole = require('../middleware/checkRole');
 const { findSemanticMatches } = require('../services/semanticEngine');
@@ -77,8 +78,16 @@ router.get('/users/me', async (req, res) => {
  */
 router.get('/volunteer/me', checkRole('Volunteer', 'Administrator'), async (req, res) => {
   try {
-    const vol = await Volunteer.findById(req.impactUser.linkedVolunteerId);
-    if (!vol) return res.status(404).json({ error: 'Volunteer profile missing.' });
+    const vol = await Volunteer.findById(req.impactUser.linkedVolunteerId).populate({
+      path: 'projectIds',
+      model: Project // Use the imported model directly
+    });
+    if (!vol) {
+      console.warn(`[AUTH] Volunteer profile missing for user ${req.impactUser.uid} (Link: ${req.impactUser.linkedVolunteerId})`);
+      return res.status(404).json({ error: `Volunteer profile missing for link ID ${req.impactUser.linkedVolunteerId}` });
+    }
+    
+    console.log(`[VOLUNTEER] Found ${vol.projectIds?.length} projects for ${vol.name}. First project name: ${vol.projectIds?.[0]?.name}`);
     
     // Privacy: exclude admin-only sensitive metrics if needed
     const response = vol.toObject();

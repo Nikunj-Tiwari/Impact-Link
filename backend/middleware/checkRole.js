@@ -10,11 +10,13 @@ const checkRole = (...allowedRoles) => async (req, res, next) => {
     const user = await User.findOne({ uid: req.user.uid });
     
     if (!user) {
-      return res.status(404).json({ error: 'User record not found in database. Complete onboarding at /setup.' });
+      console.warn(`[AUTH] User record not found for UID: ${req.user?.uid}`);
+      return res.status(404).json({ error: `User record not found (${req.user?.uid}). Complete onboarding.` });
     }
 
     if (!allowedRoles.includes(user.role)) {
-      return res.status(403).json({ error: `Access denied. Role '${user.role}' lacks sufficient permissions.` });
+      console.warn(`[AUTH] Role mismatch. User ${user.uid} has role ${user.role}, but [${allowedRoles}] required.`);
+      return res.status(403).json({ error: `Access denied. Role '${user.role}' lacks permissions.` });
     }
 
     // Attach full database user object to request

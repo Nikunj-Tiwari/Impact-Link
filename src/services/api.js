@@ -14,12 +14,20 @@ import { auth } from './firebase';
  */
 export const getAuthHeaders = async () => {
   try {
-    const token = await auth?.currentUser?.getIdToken();
+    // 1. Try Firebase Token
+    let token = await auth?.currentUser?.getIdToken();
+    
+    // 2. Fallback to Local Test Token
+    if (!token) {
+      token = localStorage.getItem('test-token');
+    }
+
     return {
       'Content-Type': 'application/json',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     };
-  } catch {
+  } catch (err) {
+    console.warn('[API] Auth header generation failed:', err);
     return { 'Content-Type': 'application/json' };
   }
 };
@@ -68,7 +76,7 @@ export const deleteProject = async (id) => {
 // ─── Incidents ────────────────────────────────────────────
 export const fetchIncidents = async (projectId = null) => {
   const url = projectId ? `${API_BASE_URL}/api/incidents?projectId=${projectId}` : `${API_BASE_URL}/api/incidents`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: await getAuthHeaders() });
   if (!res.ok) throw new Error(`Failed to fetch incidents: ${res.status}`);
   return res.json();
 };
@@ -119,7 +127,7 @@ export const createBeneficiary = async (data) => {
 // ─── Volunteers ───────────────────────────────────────────
 export const fetchVolunteers = async (projectId = null) => {
   const url = projectId ? `${API_BASE_URL}/api/volunteers?projectId=${projectId}` : `${API_BASE_URL}/api/volunteers`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: await getAuthHeaders() });
   if (!res.ok) throw new Error(`Failed to fetch volunteers: ${res.status}`);
   return res.json();
 };
@@ -127,7 +135,7 @@ export const fetchVolunteers = async (projectId = null) => {
 // ─── Clusters / Analytics ─────────────────────────────────
 export const fetchClusters = async (projectId = null) => {
   const url = projectId ? `${API_BASE_URL}/api/analytics/clusters?projectId=${projectId}` : `${API_BASE_URL}/api/analytics/clusters`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: await getAuthHeaders() });
   if (!res.ok) throw new Error(`Failed to fetch clusters: ${res.status}`);
   return res.json();
 };
@@ -135,7 +143,7 @@ export const fetchClusters = async (projectId = null) => {
 // ─── Resource Hub (Logistics) ─────────────────────────────
 export const fetchResourceHub = async (projectId = null) => {
   const url = projectId ? `${API_BASE_URL}/api/resource-hub?projectId=${projectId}` : `${API_BASE_URL}/api/resource-hub`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: await getAuthHeaders() });
   if (!res.ok) throw new Error(`Failed to fetch resources: ${res.status}`);
   return res.json();
 };
@@ -194,7 +202,9 @@ export const runAllocation = async (projectId = null) => {
  * Get the latest allocation run result and running state.
  */
 export const fetchAllocationStatus = async () => {
-  const res = await fetch(`${API_BASE_URL}/api/allocation/status`);
+  const res = await fetch(`${API_BASE_URL}/api/allocation/status`, {
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch allocation status: ${res.status}`);
   return res.json();
 };
@@ -206,7 +216,9 @@ export const fetchCriticalUnmet = async (projectId = null) => {
   const url = projectId
     ? `${API_BASE_URL}/api/allocation/critical-unmet?projectId=${projectId}`
     : `${API_BASE_URL}/api/allocation/critical-unmet`;
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch critical-unmet: ${res.status}`);
   return res.json();
 };

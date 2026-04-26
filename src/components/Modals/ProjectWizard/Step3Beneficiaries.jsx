@@ -72,6 +72,23 @@ const CustomSelect = ({ value, options, onChange, placeholder, multi }) => {
               </div>
 
               <div style={{ maxHeight: '250px', overflowY: 'auto', padding: '4px' }}>
+                {/* Currently selected items that might be missing from options (Stale columns) */}
+                {multi && Array.isArray(value) && value.filter(v => !options.includes(v)).map(staleOpt => (
+                  <div 
+                    key={staleOpt}
+                    onClick={() => onChange(value.filter(v => v !== staleOpt))}
+                    style={{ 
+                      padding: '0.7rem 0.75rem', fontSize: '0.8rem', color: '#EF4444', 
+                      cursor: 'pointer', borderRadius: '8px', marginBottom: '2px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    }}
+                  >
+                    <span style={{ fontWeight: 700 }}>{staleOpt} (Missing)</span>
+                    <X size={12} color="#EF4444" />
+                  </div>
+                ))}
+
                 {filteredOptions.length > 0 ? filteredOptions.map(opt => {
                   const isSelected = Array.isArray(value) ? value.includes(opt) : value === opt;
                   return (
@@ -100,9 +117,11 @@ const CustomSelect = ({ value, options, onChange, placeholder, multi }) => {
                     </div>
                   );
                 }) : (
-                  <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: '0.75rem' }}>
-                    No matching columns
-                  </div>
+                  filteredOptions.length === 0 && (!multi || !value || value.length === 0) && (
+                    <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: '0.75rem' }}>
+                      No matching columns
+                    </div>
+                  )
                 )}
               </div>
             </motion.div>
@@ -274,7 +293,24 @@ const Step3Beneficiaries = ({ data, update }) => {
       setSelectedDataset(ds);
       const pre = await beneficiaryApi.getPreview(ds._id);
       setPreview(pre);
-      setMapping(zoneStates[activeZoneIndex]?.mapping || ds.columnMapping || pre.suggestions || {});
+      
+      // Smart mapping merge: Filter out stale columns that don't exist in the new file
+      const oldMapping = zoneStates[activeZoneIndex]?.mapping || {};
+      const newHeaders = pre.headers || [];
+      const sanitizedMapping = {};
+      
+      Object.keys(oldMapping).forEach(key => {
+        const val = oldMapping[key];
+        if (Array.isArray(val)) {
+          const filtered = val.filter(v => newHeaders.includes(v));
+          if (filtered.length > 0) sanitizedMapping[key] = filtered;
+        } else if (newHeaders.includes(val)) {
+          sanitizedMapping[key] = val;
+        }
+      });
+
+      // Prefer new suggestions for empty fields, but keep valid old mappings
+      setMapping({ ...pre.suggestions, ...sanitizedMapping });
       setSubView('mapping');
     } catch (err) { setError('Upload failed: ' + (err.response?.data?.message || err.message)); } 
     finally { setIsUploading(false); e.target.value = ''; }

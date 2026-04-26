@@ -9,10 +9,12 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchAppUser = async (user) => {
+  const fetchAppUser = async (user, overrideToken = null) => {
     try {
-      const token = await user.getIdToken();
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/users/me`, {
+      const token = overrideToken || (user ? await user.getIdToken() : localStorage.getItem('test-token'));
+      if (!token) return;
+
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/me`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -22,7 +24,6 @@ export const AuthProvider = ({ children }) => {
         const data = await res.json();
         setAppUser(data);
       } else if (res.status === 404) {
-        // User exists in Firebase but not in our DB
         setAppUser(null);
       } else {
         throw new Error('Failed to fetch user context');
@@ -36,8 +37,14 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    const testToken = localStorage.getItem('test-token');
+    
     if (!auth) {
-      setLoading(false);
+      if (testToken) {
+        fetchAppUser(null, testToken);
+      } else {
+        setLoading(false);
+      }
       return;
     }
 
@@ -45,6 +52,8 @@ export const AuthProvider = ({ children }) => {
       setFirebaseUser(user);
       if (user) {
         fetchAppUser(user);
+      } else if (testToken) {
+        fetchAppUser(null, testToken);
       } else {
         setAppUser(null);
         setLoading(false);
@@ -54,14 +63,26 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
+  const loginLocal = (token, user) => {
+    localStorage.setItem('test-token', token);
+    setAppUser(user);
+    setFirebaseUser({ email: user.email, displayName: user.displayName, isLocal: true, getIdToken: () => Promise.resolve(token) });
+  };
+
   const refreshUser = () => {
     if (firebaseUser) return fetchAppUser(firebaseUser);
+    const testToken = localStorage.getItem('test-token');
+    if (testToken) return fetchAppUser(null, testToken);
   };
 
   const getAuthHeader = async () => {
-    if (!firebaseUser) return {};
-    const token = await firebaseUser.getIdToken();
-    return { 'Authorization': `Bearer ${token}` };
+    if (firebaseUser?.getIdToken) {
+      const token = await firebaseUser.getIdToken();
+      return { 'Authorization': `Bearer ${token}` };
+    }
+    const testToken = localStorage.getItem('test-token');
+    if (testToken) return { 'Authorization': `Bearer ${testToken}` };
+    return {};
   };
 
   return (
@@ -71,7 +92,8 @@ export const AuthProvider = ({ children }) => {
       loading, 
       error, 
       refreshUser,
-      getAuthHeader
+      getAuthHeader,
+      loginLocal
     }}>
       {children}
     </AuthContext.Provider>

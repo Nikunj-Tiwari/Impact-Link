@@ -138,6 +138,12 @@ router.post('/:id/v2/process', async (req, res) => {
       return isNaN(n) ? fallback : n;
     };
 
+    // Pre-fetch project data for fallback zone naming
+    let projectData = null;
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      projectData = await Project.findById(projectId);
+    }
+
     const processRow = (row, index) => {
       totalProcessed++;
       const getVal = (field) => {
@@ -173,12 +179,29 @@ router.post('/:id/v2/process', async (req, res) => {
       // STRATEGIC FALLBACK: If the user provided no address details, use the Zone Name
       // This ensures we at least get a coordinate in the correct city/region.
       if (!rawLocation || rawLocation.trim().length < 2) {
-        const zoneName = data?.regions?.[zoneId]?.name || 'Unknown Zone';
+        const zoneName = projectData?.regions?.[zoneId]?.name || 'Unknown Zone';
         console.log(`[INGESTION] Row ${index}: No address found. Falling back to Zone: ${zoneName}`);
         rawLocation = zoneName;
       }
 
       if (index < 5) console.log(`[INGESTION] Row ${index} mapped location: "${rawLocation}"`);
+
+      const latVal = safeNum(getVal('lat'));
+      const lngVal = safeNum(getVal('lng'));
+      
+      let geo = undefined;
+      let zoneStatus = 'missing_location';
+      
+      if (latVal !== null && lngVal !== null) {
+        geo = {
+          lat: latVal,
+          lng: lngVal,
+          geocodeMethod: 'direct_coordinates',
+          confidenceScore: 1.0,
+          geocodedAt: new Date()
+        };
+        zoneStatus = 'matched';
+      }
 
       const mappedColumns = Object.values(columnMapping).flat();
       const customFields = new Map();
@@ -191,7 +214,6 @@ router.post('/:id/v2/process', async (req, res) => {
 
       // STRATEGIC: Ensure the Project ID is never lost during orchestration
       const rawProjectId = projectId || req.body.projectId;
-      console.log(`[INGESTION] Mapping Row ${index} -> Project: ${rawProjectId}`);
       
       const safeProjectId = mongoose.Types.ObjectId.isValid(rawProjectId) 
         ? new mongoose.Types.ObjectId(rawProjectId) 
@@ -229,9 +251,10 @@ router.post('/:id/v2/process', async (req, res) => {
         // UI Compatibility Fallbacks
         aadharMasked: (getVal('aadhaar') || getVal('id') || '').toString().slice(-4),
         registeredAt: new Date(),
+        geo,
         zoneAssignment: {
           assignedZoneId: zoneId !== undefined ? String(zoneId) : undefined,
-          status: 'missing_location'
+          status: zoneStatus
         }
       };
     };
@@ -268,12 +291,7 @@ router.post('/:id/v2/process', async (req, res) => {
       }
     );
 
-    let zones = [];
-    if (projectId && projectId.length === 24) {
-      const project = await Project.findById(projectId);
-      zones = project?.regions || [];
-    }
-
+    const zones = projectData?.regions || [];
     runGeocodingPipeline(dataset._id, zones, projectId, zoneId).catch(err => {
       console.error(`[PIPELINE] Fatal crash for dataset ${dataset._id}:`, err);
     });

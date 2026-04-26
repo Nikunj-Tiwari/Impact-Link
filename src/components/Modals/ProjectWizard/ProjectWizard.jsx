@@ -75,9 +75,22 @@ export default function ProjectWizard({ onClose, initialData = null }) {
     ]
   };
 
-  const [formData, setFormData] = useState(
-    initialData ? JSON.parse(JSON.stringify({ ...defaultData, ...initialData })) : JSON.parse(JSON.stringify(defaultData))
-  );
+  const [formData, setFormData] = useState(() => {
+    if (!initialData) return JSON.parse(JSON.stringify(defaultData));
+    
+    // Deep clone initial data
+    const base = JSON.parse(JSON.stringify(initialData));
+    
+    // Ensure metadata defaults are preserved for legacy records
+    return {
+      ...JSON.parse(JSON.stringify(defaultData)),
+      ...base,
+      metadata: {
+        ...defaultData.metadata,
+        ...(base.metadata || {})
+      }
+    };
+  });
 
   // Store the initial state to detect changes
   const originalData = useRef(JSON.parse(JSON.stringify(formData)));

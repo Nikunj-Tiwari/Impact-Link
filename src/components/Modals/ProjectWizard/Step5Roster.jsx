@@ -99,7 +99,7 @@ export default function Step5Roster({ data, update }) {
       setIsLoading(true);
       const missionContext = `${data.name}. ${data.description}. Focus: ${data.metadata.beneficiaryType}. Priority: ${data.metadata.priority}`;
       
-      const res = await fetch('http://localhost:5000/api/allocate/semantic', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/allocate/semantic`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -366,6 +366,7 @@ function DraftSection({ title, icon: Icon, type, color, target, candidates, sele
                           )}
                         </div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 500, marginTop: '2px' }}>{v.skills.slice(0, 3).join(' • ')}</div>
+                        {v.email && <div style={{ fontSize: '0.65rem', color: 'var(--primary)', fontWeight: 600, marginTop: '2px' }}>{v.email}</div>}
                       </div>
                  </div>
                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

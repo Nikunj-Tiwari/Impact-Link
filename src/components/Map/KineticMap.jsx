@@ -44,7 +44,8 @@ export default function KineticMap({
   selectedIncident, 
   activeDispatches, 
   clusters = { points: [], hotspots: [] },
-  projectRegions = [] 
+  projectRegions = [],
+  volunteers = []
 }) {
   const [vizMode, setVizMode] = React.useState('STRATEGIC');
   const [showNoise, setShowNoise] = React.useState(false);
@@ -476,6 +477,32 @@ export default function KineticMap({
             </>
           )}
         </MarkerClustererF>
+
+        {/* 4. Volunteer Visualization (Pulsating Beacons) */}
+        {vizMode !== 'OFF' && volunteers?.map(vol => {
+          const lat = parseFloat(vol.locationId?.lat || vol.lat);
+          const lng = parseFloat(vol.locationId?.lng || vol.lng);
+          if (isNaN(lat) || isNaN(lng)) return null;
+
+          return (
+            <OverlayViewF key={`vol-${vol._id || vol.id || Math.random()}`} position={{ lat, lng }} mapPaneName={OverlayViewF.OVERLAY_MOUSE_TARGET}>
+              <div style={{ position: 'relative', width: '20px', height: '20px', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
+                <motion.div
+                  animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+                  transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(16, 185, 129, 0.4)', borderRadius: '50%' }}
+                />
+                <div style={{ position: 'absolute', top: '25%', left: '25%', width: '50%', height: '50%', backgroundColor: '#10b981', borderRadius: '50%', border: '1.5px solid #fff', zIndex: 2, boxShadow: '0 0 8px rgba(16, 185, 129, 0.8)' }} />
+                
+                {currentZoom > 11 && (
+                  <div style={{ position: 'absolute', top: '-25px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(0,0,0,0.8)', padding: '2px 6px', borderRadius: '4px', color: '#10b981', fontSize: '10px', whiteSpace: 'nowrap', pointerEvents: 'none', fontWeight: 600, border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    {vol.name?.split(' ')[0] || 'Volunteer'} • {vol.responderType === 'mobile' ? 'Mobile' : 'Resident'}
+                  </div>
+                )}
+              </div>
+            </OverlayViewF>
+          );
+        })}
 
         <AnimatePresence>
           {activeDispatches.map((dispatch) => {

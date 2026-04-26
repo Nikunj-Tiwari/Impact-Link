@@ -12,9 +12,9 @@ const NAMES = [
 ];
 
 const SKILLS_POOL = [
-  'First Aid', 'Logistics', 'Medical (Doctor)', 'Search & Rescue', 
-  'Technical Support', 'Counseling', 'Language Translation', 
-  'Driving (Heavy Vehicles)', 'Water Sanitation', 'Community Outreach'
+  'first_aid', 'logistics', 'medical', 'search_rescue', 
+  'communication', 'counseling', 'translation', 
+  'driving', 'heavy_vehicle', 'water_rescue'
 ];
 
 const HUBS = [
@@ -112,21 +112,21 @@ async function feedGlobalVolunteers() {
         noShowCount: Math.floor(Math.random() * Math.random() * 4), // Weighted towards 0
         experienceLevel,
 
-        // Mobility
-        travelRadius,
-
-        // Availability
+        // Availability (Matching Schema Structure)
         availability: {
-          days: DAYS.filter(() => Math.random() > 0.3),
-          timeSlots: SLOTS.filter(() => Math.random() > 0.4),
-          projectDuration: ['Short-term', 'Medium-term', 'Long-term'][Math.floor(Math.random() * 3)]
+          monday:    { morning: Math.random() > 0.3, afternoon: Math.random() > 0.3, night: Math.random() > 0.6 },
+          tuesday:   { morning: Math.random() > 0.3, afternoon: Math.random() > 0.3, night: Math.random() > 0.6 },
+          wednesday: { morning: Math.random() > 0.3, afternoon: Math.random() > 0.3, night: Math.random() > 0.6 },
+          thursday:  { morning: Math.random() > 0.3, afternoon: Math.random() > 0.3, night: Math.random() > 0.6 },
+          friday:    { morning: Math.random() > 0.3, afternoon: Math.random() > 0.3, night: Math.random() > 0.6 },
+          saturday:  { morning: Math.random() > 0.5, afternoon: Math.random() > 0.5, night: Math.random() > 0.5 },
+          sunday:    { morning: Math.random() > 0.5, afternoon: Math.random() > 0.5, night: Math.random() > 0.5 },
         },
 
-        // Logistics
-        logistics: {
-          vehicle,
-          supplyCapacity: VEHICLE_CAPS[vehicle] + Math.floor(Math.random() * 20)
-        },
+        // Transport & Logistics (Matching Schema)
+        vehicleType: vehicle.toLowerCase() === 'bike' ? 'motorcycle' : vehicle.toLowerCase(),
+        vehicleCapacity: VEHICLE_CAPS[vehicle] + Math.floor(Math.random() * 20),
+        travelRadiusKm: travelRadius,
 
         // ── Two-Pass Allocation Engine Fields ─────────────────────────────
         responderType,
