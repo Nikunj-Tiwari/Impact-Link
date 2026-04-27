@@ -486,33 +486,36 @@ export default function KineticMap({
           const isGPS = coords.source === 'gps';
 
           return (
-            <OverlayViewF key={`vol-${vol._id || vol.id || Math.random()}`} position={{ lat: coords.lat, lng: coords.lng }} mapPaneName={OverlayViewF.OVERLAY_MOUSE_TARGET}>
-              <div style={{ position: 'relative', width: '20px', height: '20px', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
+            <OverlayViewF 
+              key={`vol-${vol._id || vol.id || Math.random()}`} 
+              position={{ lat: Number(coords.lat), lng: Number(coords.lng) }} 
+              mapPaneName={OverlayViewF.OVERLAY_MOUSE_TARGET}
+            >
+              <div style={{ position: 'relative', width: '24px', height: '24px', transform: 'translate(-50%, -50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {isGPS ? (
                   // White minimalist dot — verified real GPS position
                   <div style={{
-                    position: 'absolute', top: '50%', left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: '8px', height: '8px',
+                    width: '10px', height: '10px',
                     backgroundColor: '#ffffff',
                     borderRadius: '50%',
-                    boxShadow: '0 0 0 2px rgba(255,255,255,0.25), 0 0 8px rgba(255,255,255,0.5)',
-                    zIndex: 2
+                    boxShadow: '0 0 0 2px rgba(255,255,255,0.25), 0 0 10px rgba(255,255,255,0.6)',
+                    zIndex: 2,
+                    border: '1px solid #000'
                   }} />
                 ) : (
                   // Green pulsing beacon — hub/estimated position
-                  <>
+                  <div style={{ position: 'relative', width: '20px', height: '20px' }}>
                     <motion.div
-                      animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+                      animate={{ scale: [1, 2, 1], opacity: [0.6, 0, 0.6] }}
                       transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-                      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(16, 185, 129, 0.4)', borderRadius: '50%' }}
+                      style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(16, 185, 129, 0.6)', borderRadius: '50%' }}
                     />
-                    <div style={{ position: 'absolute', top: '25%', left: '25%', width: '50%', height: '50%', backgroundColor: '#10b981', borderRadius: '50%', border: '1.5px solid #fff', zIndex: 2, boxShadow: '0 0 8px rgba(16, 185, 129, 0.8)' }} />
-                  </>
+                    <div style={{ position: 'absolute', top: '25%', left: '25%', width: '50%', height: '50%', backgroundColor: '#10b981', borderRadius: '50%', border: '2px solid #fff', zIndex: 2, boxShadow: '0 0 10px rgba(16, 185, 129, 0.8)' }} />
+                  </div>
                 )}
 
                 {currentZoom > 11 && (
-                  <div style={{ position: 'absolute', top: '-25px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(0,0,0,0.8)', padding: '2px 6px', borderRadius: '4px', color: isGPS ? '#ffffff' : '#10b981', fontSize: '10px', whiteSpace: 'nowrap', pointerEvents: 'none', fontWeight: 600, border: `1px solid ${isGPS ? 'rgba(255,255,255,0.3)' : 'rgba(16, 185, 129, 0.3)'}` }}>
+                  <div style={{ position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(0,0,0,0.85)', padding: '2px 8px', borderRadius: '4px', color: isGPS ? '#ffffff' : '#10b981', fontSize: '11px', whiteSpace: 'nowrap', pointerEvents: 'none', fontWeight: 600, border: `1px solid ${isGPS ? 'rgba(255,255,255,0.4)' : 'rgba(16, 185, 129, 0.4)'}`, boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
                     {vol.name?.split(' ')[0] || 'Volunteer'} {isGPS ? '· GPS' : `· ${vol.responderType === 'mobile' ? 'Mobile' : 'Hub'}`}
                   </div>
                 )}
@@ -564,7 +567,9 @@ export default function KineticMap({
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}><span>Low</span><span>Critical</span></div>
         </div>
       )}
-      <div className="map-zoom-tag">ZOOM: {currentZoom}</div>
+      <div className="map-zoom-tag">
+        ZOOM: {currentZoom} | V: {volunteers?.length || 0}
+      </div>
     </div>
   );
 }

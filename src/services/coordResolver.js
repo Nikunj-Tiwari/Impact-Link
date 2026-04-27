@@ -41,8 +41,8 @@ export function resolveVolunteerCoords(vol, maxStaleHours = 12) {
 
   // 3. Hub location — populated locationId ref
   const loc = vol.locationId;
-  if (loc?.lat != null && loc?.lng != null) {
-    return { lat: loc.lat, lng: loc.lng, source: 'hub' };
+  if (loc && typeof loc === 'object' && loc.lat != null && loc.lng != null) {
+    return { lat: Number(loc.lat), lng: Number(loc.lng), source: 'hub' };
   }
 
   return null;
