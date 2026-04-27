@@ -153,7 +153,24 @@ const auditPII = (action) => async (req, res, next) => {
 app.post('/api/volunteer/test-login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const volunteer = await Volunteer.findOne({ email, password });
+
+    if (password !== '123456') {
+      return res.status(401).json({ error: 'Invalid mission credentials.' });
+    }
+
+    // 1. Try direct stored email match first
+    let volunteer = await Volunteer.findOne({ email, password });
+    
+    // 2. Fallback: match by derived email pattern (name.with.dots@impactlink.dev)
+    if (!volunteer && email.endsWith('@impactlink.dev')) {
+      const namePart = email.replace('@impactlink.dev', ''); // e.g. "amit.patel.1"
+      // Convert dots back to spaces and do a case-insensitive name match
+      const derivedName = namePart.replace(/\./g, ' '); // "amit patel 1"
+      volunteer = await Volunteer.findOne({ 
+        name: { $regex: new RegExp(`^${derivedName}$`, 'i') },
+        password: '123456'
+      });
+    }
     
     if (!volunteer) {
       return res.status(401).json({ error: 'Invalid mission credentials.' });
@@ -164,7 +181,7 @@ app.post('/api/volunteer/test-login', async (req, res) => {
     if (!user) {
       user = new User({
         uid: `test-vol-${volunteer._id}`,
-        email: volunteer.email,
+        email: volunteer.email || email,
         displayName: volunteer.name,
         role: 'Volunteer',
         linkedVolunteerId: volunteer._id,
@@ -195,6 +212,7 @@ app.post('/api/volunteer/test-login', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // 8. Volunteer & User Identity Routes
 app.use('/api', verifyToken, volunteerRouter);

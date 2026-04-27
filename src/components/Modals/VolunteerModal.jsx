@@ -86,24 +86,33 @@ export default function VolunteerModal({ isOpen, onClose, initialData = null }) 
               </div>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '0.25rem' }}>
                 Operational Profile: {initialData._id}
-                {initialData.email && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem', color: 'var(--primary)', fontWeight: 600 }}>
-                    <Mail size={12} /> {initialData.email}
-                    <button 
-                      onClick={() => copyToClipboard(initialData.email)}
-                      style={{ 
-                        background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', 
-                        padding: '0.25rem', cursor: 'pointer', display: 'flex', alignItems: 'center', 
-                        gap: '0.25rem', color: copied ? 'var(--success)' : 'var(--text-dim)',
-                        transition: 'all 0.2s', marginLeft: '0.5rem'
-                      }}
-                      title="Copy Email"
-                    >
-                      {copied ? <Check size={10} /> : <Copy size={10} />}
-                      {copied && <span style={{ fontSize: '0.6rem' }}>Copied!</span>}
-                    </button>
-                  </div>
-                )}
+                {(() => {
+                    const displayEmail = initialData.email || 
+                      (initialData.name 
+                        ? initialData.name.toLowerCase().replace(/ /g, '.') + '@impactlink.dev' 
+                        : null);
+                    if (!displayEmail) return null;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem', color: 'var(--primary)', fontWeight: 600 }}>
+                        <Mail size={12} />
+                        <span>{displayEmail}</span>
+                        <button 
+                          onClick={() => copyToClipboard(displayEmail)}
+                          style={{ 
+                            background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', 
+                            padding: '0.25rem 0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', 
+                            gap: '0.25rem', color: copied ? 'var(--success)' : 'var(--text-dim)',
+                            transition: 'all 0.2s', marginLeft: '0.25rem'
+                          }}
+                          title="Copy Email"
+                        >
+                          {copied ? <Check size={10} /> : <Copy size={10} />}
+                          {copied && <span style={{ fontSize: '0.6rem' }}>Copied!</span>}
+                        </button>
+                        <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontWeight: 400, marginLeft: '0.25rem' }}>pw: 123456</span>
+                      </div>
+                    );
+                  })()}
               </p>
             </div>
           </div>
