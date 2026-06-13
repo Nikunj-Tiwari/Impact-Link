@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Home, 
@@ -25,6 +26,16 @@ import { logout } from '../services/firebase';
 export default function VolunteerDashboard() {
   const { appUser } = useAuth();
   const [activeTab, setActiveTab] = useState('home');
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
+  };
 
   const tabs = [
     { id: 'home', icon: Home, label: 'Home' },
@@ -75,10 +86,10 @@ export default function VolunteerDashboard() {
         </div>
         
         <button 
-          onClick={() => logout()}
+          onClick={handleLogout}
           style={{ 
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
-            borderRadius: '10px', padding: '0.5rem', color: 'var(--text-dim)'
+            borderRadius: '10px', padding: '0.5rem', color: 'var(--text-dim)', cursor: 'pointer'
           }}
         >
           <LogOut size={18} />

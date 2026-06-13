@@ -22,15 +22,21 @@
 export function resolveVolunteerCoords(vol, maxStaleHours = 12) {
   if (!vol) return null;
 
-  // 1. Live GPS — highest priority, but only if fresh enough
+  // 1. Live GPS — highest priority
   const ll = vol.liveLocation;
   if (ll?.lat != null && ll?.lng != null) {
     const ageHours = ll.updatedAt
       ? (Date.now() - new Date(ll.updatedAt).getTime()) / 3600000
       : Infinity;
-    if (ageHours <= maxStaleHours) {
-      return { lat: parseFloat(ll.lat), lng: parseFloat(ll.lng), source: 'gps', staleHours: parseFloat(ageHours.toFixed(2)) };
-    }
+    
+    // Always return the last known location, but tag it if it's stale
+    return { 
+      lat: parseFloat(ll.lat), 
+      lng: parseFloat(ll.lng), 
+      source: 'gps', 
+      staleHours: parseFloat(ageHours.toFixed(2)),
+      isStale: ageHours > maxStaleHours 
+    };
   }
 
   // 2. homeGeo — v2 schema home coordinates (may not be present in current DB)

@@ -1,23 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  MapPin, 
-  Navigation, 
-  Package, 
-  PhoneCall, 
-  ChevronRight, 
-  CheckCircle2,
-  Info,
-  RefreshCw,
-  Check,
-  X
-} from 'lucide-react';
-import { GoogleMap, useJsApiLoader, DirectionsRenderer, MarkerF } from '@react-google-maps/api';
+import { MapPin, Navigation, Package, PhoneCall, ChevronRight, CheckCircle2, Info, RefreshCw, Check, X } from 'lucide-react';
+import { APIProvider, Map, AdvancedMarker, useMapsLibrary, useMap } from '@vis.gl/react-google-maps';
 import useAssignment from '../../hooks/useAssignment';
 import { getMyMission } from '../../services/volunteerApi';
 import { calculateHaversineDistance } from '../../services/logic';
 
-const GOOGLE_MAPS_LIBRARIES = ['places', 'geometry'];
+const GOOGLE_MAPS_LIBRARIES = ['places', 'geometry', 'routes'];
 const MAP_CONTAINER_STYLE = { width: '100%', height: '100%' };
 
 const darkMapStyle = [
@@ -33,19 +22,62 @@ const darkMapStyle = [
   { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#3d3d3d" }] }
 ];
 
+// Helper component for Directions
+function Directions({ originCoords, destCoords, setRouteError, setRouteStats }) {
+  const map = useMap();
+  const routesLibrary = useMapsLibrary('routes');
+  const [directionsService, setDirectionsService] = useState(null);
+  const [directionsRenderer, setDirectionsRenderer] = useState(null);
+
+  useEffect(() => {
+    if (!routesLibrary || !map) return;
+    setDirectionsService(new routesLibrary.DirectionsService());
+    setDirectionsRenderer(new routesLibrary.DirectionsRenderer({ 
+      map, 
+      suppressMarkers: true, 
+      polylineOptions: { strokeColor: '#38bdf8', strokeWeight: 5 } 
+    }));
+  }, [routesLibrary, map]);
+
+  useEffect(() => {
+    if (!directionsService || !directionsRenderer || !originCoords || !destCoords) return;
+
+    directionsService.route(
+      {
+        origin: originCoords,
+        destination: destCoords,
+        travelMode: 'DRIVING'
+      },
+      (result, status) => {
+        if (status === 'OK' && result) {
+          directionsRenderer.setDirections(result);
+          setRouteError(false);
+          if (result.routes[0]?.legs[0]) {
+            setRouteStats({
+              distance: result.routes[0].legs[0].distance.text,
+              duration: result.routes[0].legs[0].duration.text
+            });
+          }
+        } else {
+          console.error(`Error fetching directions: ${status}`);
+          setRouteError(true);
+        }
+      }
+    );
+
+    return () => directionsRenderer.setMap(null);
+  }, [directionsService, directionsRenderer, originCoords, destCoords, setRouteError, setRouteStats]);
+
+  return null;
+}
+
 export default function AssignmentTab() {
   const { assignment, fullProfile, loading, error, updateStatus, refreshAssignment } = useAssignment();
   const [navData, setNavData] = useState({ mission: null, volunteer: null });
   const [navLoading, setNavLoading] = useState(false);
-  const [directions, setDirections] = useState(null);
   const [routeError, setRouteError] = useState(false);
   const [routeStats, setRouteStats] = useState(null);
-
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: GOOGLE_MAPS_LIBRARIES
-  });
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchNavData = useCallback(async () => {
     if (!assignment?.id) return;
@@ -64,17 +96,12 @@ export default function AssignmentTab() {
     fetchNavData();
   }, [fetchNavData]);
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refreshAssignment();
     await fetchNavData();
     setTimeout(() => setIsRefreshing(false), 500);
   };
-
-  // ── All hooks must be declared here, before ANY conditional return ──────────
-  // (React Rules of Hooks: hooks must be called in the same order every render)
 
   const mission = navData?.mission ?? null;
   const volunteer = navData?.volunteer ?? null;
@@ -98,62 +125,34 @@ export default function AssignmentTab() {
     return calculateHaversineDistance(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng).toFixed(1);
   }, [originCoords, destCoords]);
 
-  useEffect(() => {
-    if (isLoaded && originCoords && destCoords && window.google) {
-      const directionsService = new window.google.maps.DirectionsService();
-      directionsService.route(
-        {
-          origin: originCoords,
-          destination: destCoords,
-          travelMode: window.google.maps.TravelMode.DRIVING,
-        },
-        (result, status) => {
-          if (status === window.google.maps.DirectionsStatus.OK && result) {
-            setDirections(result);
-            setRouteError(false);
-            if (result.routes[0]?.legs[0]) {
-              setRouteStats({
-                distance: result.routes[0].legs[0].distance.text,
-                duration: result.routes[0].legs[0].duration.text
-              });
-            }
-          } else {
-            console.error(`Error fetching directions: ${status}`);
-            setRouteError(true);
-          }
-        }
-      );
-    }
-  }, [isLoaded, originCoords, destCoords]);
-
-  // ── Conditional early returns (after all hooks) ──────────────────────────
-
   // State 1 & 2: No Assignment or Drafted
   if (!assignment || !assignment.id) {
     const latestProject = fullProfile?.projectIds?.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
-    
     const loc = fullProfile?.liveLocation || fullProfile?.locationId || null;
     const mapCenter = loc && loc.lat ? { lat: loc.lat, lng: loc.lng } : { lat: 20, lng: 77 };
 
     if (latestProject) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {/* MAP AREA - System Standby */}
           <div style={{ height: '35vh', background: '#111', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.08)', position: 'relative', overflow: 'hidden' }}>
-            {isLoaded ? (
-              <GoogleMap 
-                mapContainerStyle={MAP_CONTAINER_STYLE} 
-                center={mapCenter} 
-                zoom={12} 
+            <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ""} libraries={GOOGLE_MAPS_LIBRARIES}>
+              <Map 
+                mapId={import.meta.env.VITE_GOOGLE_MAPS_ID || "DEMO_MAP_ID"}
+                style={MAP_CONTAINER_STYLE} 
+                defaultCenter={mapCenter} 
+                defaultZoom={12} 
                 options={{ styles: darkMapStyle, disableDefaultUI: true, gestureHandling: 'greedy' }}
+                colorScheme={'DARK'}
               >
                 {loc && loc.lat && (
-                  <MarkerF position={{ lat: loc.lat, lng: loc.lng }} icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#38bdf8", fillOpacity: 0.8, strokeColor: "#ffffff", strokeWeight: 2 }} />
+                  <AdvancedMarker position={{ lat: loc.lat, lng: loc.lng }}>
+                     <svg width="24" height="24" viewBox="-12 -12 24 24">
+                       <circle r="7" fill="#38bdf8" fillOpacity="0.8" stroke="#ffffff" strokeWidth="2" />
+                     </svg>
+                  </AdvancedMarker>
                 )}
-              </GoogleMap>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-dim)' }}>Loading Map...</div>
-            )}
+              </Map>
+            </APIProvider>
             
             <div style={{ position: 'absolute', bottom: '1rem', left: '1rem', right: '1rem', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', padding: '0.75rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center', zIndex: 10 }}>
                <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#38bdf8', letterSpacing: '1px' }}>SYSTEM STANDBY</span>
@@ -187,9 +186,7 @@ export default function AssignmentTab() {
           >
              <RefreshCw size={18} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} /> {isRefreshing ? "Scanning..." : "Refresh Status"}
           </button>
-          <style>{`
-            @keyframes spin { 100% { transform: rotate(360deg); } }
-          `}</style>
+          <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
         </div>
       );
     }
@@ -218,17 +215,12 @@ export default function AssignmentTab() {
 
   const isPending = volunteer?.assignmentStatus === 'pending_accept';
 
-
-
   const handleAccept = async () => {
     await updateStatus('accepted');
     fetchNavData();
   };
 
   const handleDecline = async () => {
-    // In a real app, this might ping the allocation engine to re-assign
-    // For now we'll just set it to unassigned on the frontend perspective 
-    // (though backend might need a specific decline endpoint).
     alert("Mission declined. Please notify coordinator.");
   };
 
@@ -264,10 +256,23 @@ export default function AssignmentTab() {
         </div>
 
         <div style={{ height: '200px', background: '#111', borderRadius: '24px', overflow: 'hidden', position: 'relative' }}>
-          {isLoaded && destCoords ? (
-             <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={destCoords} zoom={14} options={{ styles: darkMapStyle, disableDefaultUI: true }}>
-               <MarkerF position={destCoords} icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#ef4444", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2 }} />
-             </GoogleMap>
+          {destCoords ? (
+            <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ""} libraries={GOOGLE_MAPS_LIBRARIES}>
+               <Map 
+                 mapId={import.meta.env.VITE_GOOGLE_MAPS_ID || "DEMO_MAP_ID"}
+                 style={MAP_CONTAINER_STYLE} 
+                 defaultCenter={destCoords} 
+                 defaultZoom={14} 
+                 options={{ styles: darkMapStyle, disableDefaultUI: true }}
+                 colorScheme={'DARK'}
+               >
+                 <AdvancedMarker position={destCoords}>
+                   <svg width="24" height="24" viewBox="-12 -12 24 24">
+                     <circle r="8" fill="#ef4444" stroke="#ffffff" strokeWidth="2" />
+                   </svg>
+                 </AdvancedMarker>
+               </Map>
+            </APIProvider>
           ) : (
              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-dim)' }}>Map loading...</div>
           )}
@@ -291,25 +296,33 @@ export default function AssignmentTab() {
       
       {/* MAP AREA */}
       <div style={{ height: '45vh', background: '#111', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.08)', position: 'relative', overflow: 'hidden' }}>
-        {isLoaded ? (
-          <GoogleMap 
-            mapContainerStyle={MAP_CONTAINER_STYLE} 
-            center={originCoords || destCoords || { lat: 0, lng: 0 }} 
-            zoom={13} 
+        <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ""} libraries={GOOGLE_MAPS_LIBRARIES}>
+          <Map 
+            mapId={import.meta.env.VITE_GOOGLE_MAPS_ID || "DEMO_MAP_ID"}
+            style={MAP_CONTAINER_STYLE} 
+            defaultCenter={originCoords || destCoords || { lat: 0, lng: 0 }} 
+            defaultZoom={13} 
             options={{ styles: darkMapStyle, disableDefaultUI: true, gestureHandling: 'greedy' }}
+            colorScheme={'DARK'}
           >
-            {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: true, polylineOptions: { strokeColor: '#38bdf8', strokeWeight: 5 } }} />}
+            <Directions originCoords={originCoords} destCoords={destCoords} setRouteError={setRouteError} setRouteStats={setRouteStats} />
             
             {originCoords && (
-              <MarkerF position={originCoords} icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#F59E0B", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2 }} zIndex={2} />
+              <AdvancedMarker position={originCoords} zIndex={2}>
+                 <svg width="20" height="20" viewBox="-10 -10 20 20">
+                   <circle r="7" fill="#F59E0B" stroke="#ffffff" strokeWidth="2" />
+                 </svg>
+              </AdvancedMarker>
             )}
             {destCoords && (
-              <MarkerF position={destCoords} icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: "#ef4444", fillOpacity: 0.8, strokeColor: "#ffffff", strokeWeight: 2 }} zIndex={1} />
+              <AdvancedMarker position={destCoords} zIndex={1}>
+                 <svg width="24" height="24" viewBox="-12 -12 24 24">
+                   <circle r="9" fill="#ef4444" fillOpacity="0.8" stroke="#ffffff" strokeWidth="2" />
+                 </svg>
+              </AdvancedMarker>
             )}
-          </GoogleMap>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-dim)' }}>Loading Navigation Map...</div>
-        )}
+          </Map>
+        </APIProvider>
 
         {/* Floating ETA Overlay */}
         {(routeStats || directDistance) && (
@@ -379,7 +392,7 @@ function StatusStepper({ currentStatus, onUpdate }) {
   ];
 
   const currentIndex = steps.findIndex(s => s.id === currentStatus);
-  const displayIndex = Math.max(0, currentIndex); // Handle pending_accept which isn't in this list
+  const displayIndex = Math.max(0, currentIndex); 
 
   return (
     <div style={{ marginTop: '1.5rem' }}>
