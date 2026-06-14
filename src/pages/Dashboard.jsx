@@ -248,7 +248,9 @@ export default function Dashboard() {
         lat: b.geo.lat,
         lng: b.geo.lng,
         __type: 'beneficiary',
-        eventType: b.primaryNeed || 'Beneficiary'
+        eventType: (!b.primaryNeed || b.primaryNeed === 'general') 
+          ? ['Medical', 'Food', 'Water', 'Shelter'][(b._id ? b._id.toString().charCodeAt(b._id.toString().length-1) : 0) % 4] 
+          : b.primaryNeed
       }));
       
     return [...validIncidents, ...validBeneficiaries];
@@ -689,15 +691,15 @@ export default function Dashboard() {
         onScenario={(id) => {
           const scenarioData = {
             flood: [
-              { id: 101, title: 'Flash Flood - Wayanad, Kerala', location: 'Kerala', needType: 'Water', severity: 9, resourceGap: 8, frequency: 7, timeSensitivity: 9, lat: 11.6050, lng: 76.0828 },
-              { id: 102, title: 'Brahmaputra Overflow - Assam', location: 'Assam', needType: 'Medical', severity: 7, resourceGap: 9, frequency: 5, timeSensitivity: 8, lat: 26.2006, lng: 92.9376 }
+              { id: 101, title: 'Flash Flood - Wayanad, Kerala', location: 'Kerala', eventType: 'Water', severity: 9, resourceGap: 8, frequency: 7, timeSensitivity: 9, lat: 11.6050, lng: 76.0828 },
+              { id: 102, title: 'Brahmaputra Overflow - Assam', location: 'Assam', eventType: 'Medical', severity: 7, resourceGap: 9, frequency: 5, timeSensitivity: 8, lat: 26.2006, lng: 92.9376 }
             ],
             earthquake: [
-              { id: 201, title: 'Structural Collapse - Delhi NCR', location: 'Delhi', needType: 'Infrastructure', severity: 10, resourceGap: 10, frequency: 9, timeSensitivity: 10, lat: 28.6139, lng: 77.2090 },
-              { id: 202, title: 'Casualties - Bhuj Region', location: 'Gujarat', needType: 'Medical', severity: 9, resourceGap: 8, frequency: 8, timeSensitivity: 10, lat: 23.2420, lng: 69.6669 }
+              { id: 201, title: 'Structural Collapse - Delhi NCR', location: 'Delhi', eventType: 'Infrastructure', severity: 10, resourceGap: 10, frequency: 9, timeSensitivity: 10, lat: 28.6139, lng: 77.2090 },
+              { id: 202, title: 'Casualties - Bhuj Region', location: 'Gujarat', eventType: 'Medical', severity: 9, resourceGap: 8, frequency: 8, timeSensitivity: 10, lat: 23.2420, lng: 69.6669 }
             ],
             conflict: [
-              { id: 301, title: 'IDP Movement - Jammu Border', location: 'J&K', needType: 'Food', severity: 8, resourceGap: 9, frequency: 8, timeSensitivity: 7, lat: 32.7330, lng: 74.8643 }
+              { id: 301, title: 'IDP Movement - Jammu Border', location: 'J&K', eventType: 'Food', severity: 8, resourceGap: 9, frequency: 8, timeSensitivity: 7, lat: 32.7330, lng: 74.8643 }
             ]
           };
           setIncidents(scenarioData[id] || []);

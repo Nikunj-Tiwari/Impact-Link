@@ -28,6 +28,7 @@ const mongoose = require('mongoose');
 const Event = require('../models/Event');
 const Volunteer = require('../models/Volunteer');
 const AuditLog = require('../models/AuditLog');
+const Project = require('../models/Project');
 const { resolveVolunteerCoords } = require('./coordResolver');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -54,6 +55,23 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Geographic Boundary Check ───────────────────────────────────────────────
+
+/**
+ * Checks whether a point (lat, lng) falls within any of the project's defined regions.
+ * A region is { center: { lat, lng }, radius (km), name }.
+ * Returns true if the point is inside at least one region, or if no regions are defined.
+ */
+function isWithinProjectBoundaries(lat, lng, regions) {
+  if (!regions || regions.length === 0) return true; // No boundaries = accept all
+  for (const region of regions) {
+    if (!region.center?.lat || !region.center?.lng) continue;
+    const dist = haversineDistance(lat, lng, region.center.lat, region.center.lng);
+    if (dist <= (region.radius || 50)) return true;
+  }
+  return false;
 }
 
 // ─── Skill Match Score (mirrors frontend skillMatrix.js) ─────────────────────
@@ -143,7 +161,8 @@ function softmaxSelect(candidates, τ = SOFTMAX_TEMPERATURE) {
 
 function estimateETA(volunteer, mission) {
   // Use shared resolver: liveLocation (GPS, if fresh) → homeGeo → locationId (hub)
-  const coords = resolveVolunteerCoords(volunteer);
+  // Passing Infinity ensures we always trust the DB's GPS location if it exists, matching the frontend map
+  const coords = resolveVolunteerCoords(volunteer, Infinity);
   if (!coords) return Infinity; // No coordinates → cannot estimate, treat as unreachable
 
   const distKm = haversineDistance(coords.lat, coords.lng, mission.lat, mission.lng);
@@ -170,97 +189,57 @@ async function runPass1_Resident(missions, residents) {
     });
   }
 
-  // Group residents by hub, computing hub center from the average of member coords
-  // This prevents the (0,0) Gulf of Guinea bug when locationId has no lat/lng.
-  const hubGroups = new Map();
-  for (const vol of residents) {
-    const hubKey = String(vol.hubId || vol.locationId?._id || 'unknown');
-    const coords = resolveVolunteerCoords(vol);
-    
-    if (!hubGroups.has(hubKey)) {
-      hubGroups.set(hubKey, {
-        hubId: hubKey,
-        // Use locationId coords if valid, otherwise start at null — will be averaged from members
-        lat: (vol.locationId?.lat && vol.locationId.lat !== 0) ? vol.locationId.lat : null,
-        lng: (vol.locationId?.lng && vol.locationId.lng !== 0) ? vol.locationId.lng : null,
-        radius: RESIDENT_MAX_RADIUS_KM,
-        volunteers: [],
-        _expandedOnce: false,
-        _memberCoords: []
-      });
-    }
-    const hub = hubGroups.get(hubKey);
-    hub.volunteers.push(vol);
-    // Collect resolved coords so we can compute a centroid if hub.lat is null
-    if (coords) hub._memberCoords.push(coords);
-  }
+  // Instead of grouping by administrative hubs (which breaks if a volunteer's live GPS
+  // is far from their assigned hub), we process each resident individually based on
+  // their true resolved coordinates.
+  const availableVolunteers = residents.filter(v => v.status !== 'Inactive');
 
-  // For hubs without valid lat/lng from the location ref, use the centroid of member coords
-  for (const [, hub] of hubGroups) {
-    if ((hub.lat == null || hub.lat === 0) && hub._memberCoords.length > 0) {
-      hub.lat = hub._memberCoords.reduce((s, c) => s + c.lat, 0) / hub._memberCoords.length;
-      hub.lng = hub._memberCoords.reduce((s, c) => s + c.lng, 0) / hub._memberCoords.length;
-    }
-  }
+  for (const vol of availableVolunteers) {
+    const currentLoad = volunteerLoad.get(String(vol._id)) ?? 0;
+    if (currentLoad >= (vol.maxLoad || 3)) continue;
 
-  for (const [, hub] of hubGroups) {
-    // If hub center is still invalid (no volunteer has any coords), skip
-    if (!hub.lat || !hub.lng) {
-      console.warn(`[Allocation] Hub ${hub.hubId} has no resolvable coordinates — skipping.`);
+    // Pass Infinity to trust stale GPS in demo scenarios, matching the frontend map
+    const volCoords = resolveVolunteerCoords(vol, Infinity);
+    if (!volCoords || !volCoords.lat || !volCoords.lng) {
+      console.warn(`[Allocation] Resident ${vol.name} has no resolvable coordinates — skipping.`);
       continue;
     }
 
-    // Step 1: Find missions within hub radius
-    let localMissions = missions.filter(m => {
+    const scoringLat = volCoords.lat;
+    const scoringLng = volCoords.lng;
+    const maxRadius = vol.travelRadiusKm || 50;
+
+    // Find all missions within this volunteer's personal radius
+    const personalMissions = missions.filter(m => {
       if (!m.lat || !m.lng) return false;
-      return haversineDistance(hub.lat, hub.lng, m.lat, m.lng) <= hub.radius;
+      return haversineDistance(scoringLat, scoringLng, m.lat, m.lng) <= maxRadius;
     });
 
-    // Edge Case: Resident Overflow — no local missions, expand radius once (+30km)
-    if (localMissions.length === 0 && hub.volunteers.length > 0 && !hub._expandedOnce) {
-      hub._expandedOnce = true;
-      const expandedRadius = hub.radius + RADIUS_EXPANSION_STEP_KM;
-      localMissions = missions.filter(m => {
-        if (!m.lat || !m.lng) return false;
-        const dist = haversineDistance(hub.lat, hub.lng, m.lat, m.lng);
-        return dist <= expandedRadius;
-      });
-    }
+    if (personalMissions.length === 0) continue;
 
-    if (localMissions.length === 0) continue;
-
-    const availableVolunteers = hub.volunteers.filter(v => {
-      const load = volunteerLoad.get(String(v._id)) ?? 0;
-      return v.status !== 'Inactive' && load < (v.maxLoad || 3);
-    });
-
-    for (const vol of availableVolunteers) {
-      const currentLoad = volunteerLoad.get(String(vol._id)) ?? 0;
-      if (currentLoad >= (vol.maxLoad || 3)) continue;
-
-      // Use volunteer's actual resolved coords for distance scoring if available
-      const volCoords = resolveVolunteerCoords(vol);
-      const scoringLat = volCoords?.lat ?? hub.lat;
-      const scoringLng = volCoords?.lng ?? hub.lng;
-
-      const scoredMissions = localMissions
-        .filter(m => {
-          const state = missionStates.get(String(m._id));
-          return state && state.saturationRate < SATURATION_THRESHOLD;
-        })
-        .map(m => {
-          const distKm = Math.max(0.1, haversineDistance(scoringLat, scoringLng, m.lat, m.lng));
-          const skillMatch = getSkillMatchScore(vol.skills, m.eventType || m.needType);
-          const proximityScore = 1 / distKm;
-          const decayedPriority = calculateDecayedPriorityScore(m);
-          return {
-            mission: m,
-            score: skillMatch * proximityScore * decayedPriority,
-            distKm,
-            skillMatch,
-          };
-        })
-        .sort((a, b) => b.score - a.score);
+    const scoredMissions = personalMissions
+      .filter(m => {
+        const state = missionStates.get(String(m._id));
+        return state && state.saturationRate < SATURATION_THRESHOLD;
+      })
+      .map(m => {
+        const distKm = Math.max(0.1, haversineDistance(scoringLat, scoringLng, m.lat, m.lng));
+        const skillMatch = getSkillMatchScore(vol.skills, m.eventType || m.needType);
+        const proximityScore = 1 / distKm;
+        const decayedPriority = calculateDecayedPriorityScore(m);
+        const state = missionStates.get(String(m._id));
+        // Absolute penalty (1e-6) to guarantee round-robin spreading. 
+        // A penalized mission will score < 0.0001, while any unassigned mission scores > 0.002.
+        const saturationPenalty = state && state.assignedCount > 0 ? 1e-6 : 1;
+        
+        return {
+          mission: m,
+          score: skillMatch * proximityScore * decayedPriority * saturationPenalty,
+          distKm,
+          skillMatch,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
 
       if (scoredMissions.length === 0) continue;
 
@@ -283,7 +262,6 @@ async function runPass1_Resident(missions, residents) {
       state.resourceGapMet = Math.min(1, state.resourceGapMet + fillRate);
       state.saturationRate = state.resourceGapMet;
       missionStates.set(mId, state);
-    }
   }
 
   // Step 4: Flag open gaps (< 60% saturation)
@@ -610,51 +588,70 @@ async function runAllocation(projectId, userId = null) {
     }
 
     // ── Reset Stale Assignments ────────────────────────────────────────────
-    // Clear previous allocation results for volunteers in this project scope
-    // so assignments from a prior project/run don't bleed through.
+    // Clear ALL previous assignment state for volunteers in this project's roster.
+    // We reset unconditionally — regardless of which project their current
+    // assignment belongs to — because any volunteer on this project's roster
+    // must be fully available (load=0, status=unassigned) before we allocate.
+    // The previous conditional check (only resetting if the assignment belonged
+    // to THIS project) was the root cause of cross-project stale assignments
+    // persisting (e.g. Anjali assigned to Delhi from a different project run).
     const staleVolunteerQuery = projectId
       ? { projectIds: projectId, assignmentStatus: { $ne: 'unassigned' } }
       : { assignmentStatus: { $ne: 'unassigned' } };
-    
-    const staleVolunteers = await Volunteer.find(staleVolunteerQuery, '_id currentAssignmentId').lean();
-    
-    if (staleVolunteers.length > 0) {
-      // Only reset if their current assignment belongs to an event in THIS project scope
-      // (prevents clearing a volunteer assigned to a different active project)
-      const staleEventIds = staleVolunteers
-        .map(v => v.currentAssignmentId)
-        .filter(Boolean);
-      
-      const eventQuery2 = { _id: { $in: staleEventIds } };
-      if (projectId) eventQuery2.projectId = projectId;
-      
-      const ownedEventIds = new Set(
-        (await Event.find(eventQuery2, '_id').lean()).map(e => String(e._id))
+
+    const resetCount = await Volunteer.countDocuments(staleVolunteerQuery);
+    if (resetCount > 0) {
+      await Volunteer.updateMany(
+        staleVolunteerQuery,
+        { $set: { currentAssignmentId: null, assignmentStatus: 'unassigned', currentLoad: 0 } }
       );
-      
-      const volunteerIdsToReset = staleVolunteers
-        .filter(v => !v.currentAssignmentId || ownedEventIds.has(String(v.currentAssignmentId)))
-        .map(v => v._id);
-      
-      if (volunteerIdsToReset.length > 0) {
-        await Volunteer.updateMany(
-          { _id: { $in: volunteerIdsToReset } },
-          { $set: { currentAssignmentId: null, assignmentStatus: 'unassigned', currentLoad: 0 } }
-        );
-        console.log(`[Allocation] Reset ${volunteerIdsToReset.length} stale volunteer assignment(s) before fresh run.`);
-      }
+      console.log(`[Allocation] Reset ${resetCount} stale volunteer assignment(s) before fresh run.`);
     }
 
+    // Reset Event saturation and assignment lists
+    const staleEventQuery = projectId ? { projectId } : {};
+    console.log(`[Allocation] Resetting events with query:`, staleEventQuery);
+    await Event.updateMany(staleEventQuery, {
+      $set: {
+        allocationStatus: 'unassigned',
+        saturationRate: 0,
+        resourceGapMet: 0,
+        assignedResponders: []
+      }
+    });
+    console.log(`[Allocation] Events reset complete.`);
+
     // ── Load Data ──────────────────────────────────────────────────────────
+    // Load the project document to access geographic boundaries
+    let projectDoc = null;
+    if (projectId) {
+      projectDoc = await Project.findById(projectId).lean();
+    }
+
     const eventQuery = { allocationStatus: { $in: ['unassigned', 'partially_saturated', 'critical_unmet'] } };
     if (projectId) eventQuery.projectId = projectId;
 
-    const [missions, allVolunteers] = await Promise.all([
+    let [missions, allVolunteers] = await Promise.all([
       Event.find(eventQuery).lean(),
       Volunteer.find(
         projectId ? { projectIds: projectId, status: { $ne: 'Inactive' } } : { status: { $ne: 'Inactive' } }
       ).populate('locationId').lean(),
     ]);
+
+    // ── Geographic Boundary Enforcement ────────────────────────────────────
+    // For non-Global projects with defined regions, filter out missions
+    // that fall outside the project's operational area.
+    if (projectDoc && projectDoc.scope !== 'Global' && projectDoc.regions && projectDoc.regions.length > 0) {
+      const beforeCount = missions.length;
+      missions = missions.filter(m => {
+        if (!m.lat || !m.lng) return false;
+        return isWithinProjectBoundaries(m.lat, m.lng, projectDoc.regions);
+      });
+      const filtered = beforeCount - missions.length;
+      if (filtered > 0) {
+        console.log(`[Allocation] Geographic filter: removed ${filtered} out-of-boundary missions (kept ${missions.length}).`);
+      }
+    }
 
     if (missions.length === 0) {
       return { 
@@ -670,8 +667,8 @@ async function runAllocation(projectId, userId = null) {
     }
 
     // Separate resident and mobile units
-    const residents = allVolunteers.filter(v => v.responderType === 'resident' || (v.travelRadius || 50) <= 50);
-    const mobileUnits = allVolunteers.filter(v => v.responderType === 'mobile' || (v.travelRadius || 50) > 50);
+    const residents = allVolunteers.filter(v => v.responderType === 'resident' || (v.travelRadiusKm || 50) <= 50);
+    const mobileUnits = allVolunteers.filter(v => v.responderType === 'mobile' || (v.travelRadiusKm || 50) > 50);
 
     // ── PASS 1: RESIDENT ASSIGNMENT (Must complete before Pass 2 starts) ──
     const pass1Result = await runPass1_Resident(missions, residents);

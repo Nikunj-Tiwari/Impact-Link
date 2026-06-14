@@ -7,8 +7,8 @@ const ai = new GoogleGenAI({ apiKey: API_KEY });
 // ── Tiered Model Strategy ─────────────────────────────────────────────────────
 // Flash  → Real-time ETL, field ingestion, per-responder reasoning (low latency, high volume)
 // Pro    → Strategic re-clustering, anomaly detection, alloc advice (5-min cadence, free tier: 2 RPM / 50 RPD)
-const FLASH_MODEL = 'gemini-2.5-flash';
-const PRO_MODEL   = 'gemini-2.5-pro';
+const FLASH_MODEL = 'gemini-3-flash-preview';
+const PRO_MODEL   = 'gemini-3-flash-preview';
 
 // Pro cadence guard — prevent exceeding 2 RPM on free tier
 let _lastProCall = 0;

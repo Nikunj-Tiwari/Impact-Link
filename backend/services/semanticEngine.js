@@ -25,7 +25,7 @@ const generateEmbedding = async (text) => {
   // SEMANTIC PIPELINE (Direct REST for maximum stability)
   if (API_KEY) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${API_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${API_KEY}`;
       
       const res = await fetch(url, {
         method: 'POST',

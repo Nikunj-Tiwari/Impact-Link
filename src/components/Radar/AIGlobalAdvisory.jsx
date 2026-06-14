@@ -13,7 +13,12 @@ export default function AIGlobalAdvisory({ incidents }) {
       const result = await getGlobalStrategicAdvice(incidents);
       setAdvice(result);
     } catch (error) {
-      setAdvice("Strategic layer offline. Please check API configuration.");
+      const msg = error?.message || '';
+      if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('rate-limited')) {
+        setAdvice("Network Scan Paused.\\nFree tier API rate limit reached. Please wait 5 minutes before rescanning.");
+      } else {
+        setAdvice("Strategic layer offline. Please check API configuration.");
+      }
     } finally {
       setIsScanning(false);
     }

@@ -486,14 +486,8 @@ app.get('/api/volunteers', async (req, res) => {
       // Check if this project is 'Global'
       const project = await Project.findById(req.query.projectId);
       if (project && project.scope !== 'Global') {
-        // Find volunteers who are either unassigned OR specifically linked to this project
-        query = { 
-          $or: [
-            { projectIds: req.query.projectId },
-            { projectIds: { $size: 0 } },
-            { projectIds: { $exists: false } }
-          ]
-        };
+        // STRICT: Only return volunteers explicitly assigned to this project's roster
+        query = { projectIds: req.query.projectId };
       }
       // If project is Global, query remains {} to fetch everyone
     }
@@ -522,6 +516,7 @@ app.get('/api/incidents', async (req, res) => {
         _id: e._id,
         id: e._id,
         title: e.eventType + ' - ' + (e.locationId?.name || 'Area'),
+        eventType: e.eventType,
         location: e.locationId?.name || 'Area',
         severity: e.severity,
         resourceGap: e.resourceGap,
@@ -530,7 +525,12 @@ app.get('/api/incidents', async (req, res) => {
         lat: e.lat,
         lng: e.lng,
         createdAt: e.eventTime,
-        weight: parseFloat(weight) // Added for heatmap weighting
+        weight: parseFloat(weight),
+        // Allocation metadata — required for Dashboard efficiency display
+        saturationRate: e.saturationRate || 0,
+        allocationStatus: e.allocationStatus || 'unassigned',
+        assignedResponders: e.assignedResponders || [],
+        resourceGapMet: e.resourceGapMet || 0
       };
     });
     res.json(legacyMap);
@@ -750,12 +750,14 @@ app.get('/api/allocation/critical-unmet', async (req, res) => {
 // POST /api/allocation/rerun — Force re-allocation (e.g. after severity spike)
 app.post('/api/allocation/rerun', verifyToken, async (req, res) => {
   try {
-    // Reset critical_unmet missions back to unassigned so they re-enter the queue
+    const projectId = req.query.projectId || req.body.projectId || null;
+    // Reset critical_unmet missions back to unassigned — scoped to this project only
+    const resetQuery = { allocationStatus: 'critical_unmet' };
+    if (projectId) resetQuery.projectId = projectId;
     await Event.updateMany(
-      { allocationStatus: 'critical_unmet' },
+      resetQuery,
       { $set: { allocationStatus: 'unassigned', saturationRate: 0 } }
     );
-    const projectId = req.query.projectId || req.body.projectId || null;
     const result = await runAllocation(projectId, req.user);
     res.json(result);
   } catch (error) {

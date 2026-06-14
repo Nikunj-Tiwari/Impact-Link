@@ -15,12 +15,8 @@ const apiKey = match ? match[1].trim() : "";
 async function checkModels() {
   const ai = new GoogleGenAI({ apiKey });
   const candidates = [
-    "gemini-1.5-flash",
-    "gemini-2.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-1.5-flash-001",
-    "gemini-1.5-flash-latest",
-    "models/gemini-1.5-flash",
+    "text-embedding-004",
+    "gemini-embedding-2"
   ];
 
   console.log("Testing GenAI models via default endpoint...");

@@ -24,7 +24,7 @@ export default function MisallocationRadar({ incidents }) {
             <div key={inc.id || inc._id} style={{ position: 'relative' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                   <span style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 600 }}>{inc.title}</span>
+                   <span style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 600 }}>{inc.eventType || inc.title}</span>
                    <span style={{ fontSize: '0.625rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>{inc.location}</span>
                 </div>
                 <div style={{ textAlign: 'right' }}>
