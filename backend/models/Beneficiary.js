@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const BeneficiarySchema = new mongoose.Schema({
-  datasetId:   { type: mongoose.Schema.Types.ObjectId, ref: 'BeneficiaryDataset', required: true, index: true },
+  datasetId:   { type: mongoose.Schema.Types.ObjectId, ref: 'BeneficiaryDataset', index: true },
   projectId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Project', index: true },  // set when linked to a project
   rowIndex:    { type: Number },   // original row number in CSV (for error reporting)
 
@@ -11,7 +11,7 @@ const BeneficiarySchema = new mongoose.Schema({
   lastName:     { type: String },
   age:          { type: Number },
   gender:       { type: String, enum: ['male', 'female', 'other', 'prefer_not_to_say'] },
-  phone:        { type: String },
+  contactPhone: { type: String },
   aadharMasked: { type: String },
   registeredAt: { type: Date, default: Date.now },
 

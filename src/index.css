@@ -330,6 +330,11 @@ input[type="range"]::-webkit-slider-thumb {
   transition: all 0.2s;
 }
 
+.input-group select option {
+  background: var(--bg-pane);
+  color: #fff;
+}
+
 .input-group input:focus,
 .input-group select:focus {
   border-color: var(--accent-brand);

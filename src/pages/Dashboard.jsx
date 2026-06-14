@@ -285,7 +285,24 @@ export default function Dashboard() {
   const handleCreateBeneficiary = async (data) => {
     try {
       const saved = await api.createBeneficiary(data);
-      setBeneficiaries(prev => [saved, ...prev]);
+      // The POST response has encrypted PII — patch it with the original plaintext
+      // so the beneficiary list renders correctly without a refetch.
+      const displayRecord = {
+        ...saved,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        contactPhone: data.contactPhone,
+        rawLocation: data.rawLocation,
+        state: data.state,
+        geo: data.geo,
+        primaryNeed: data.primaryNeed,
+        needSeverity: data.needSeverity,
+      };
+      setBeneficiaries(prev => [displayRecord, ...prev]);
+      // Pan map to the newly plotted beneficiary
+      if (data.geo?.lat && data.geo?.lng) {
+        setMapPanTarget({ lat: data.geo.lat, lng: data.geo.lng });
+      }
     } catch (error) {
       console.error("Failed to save beneficiary:", error);
     }
@@ -643,6 +660,7 @@ export default function Dashboard() {
         isOpen={isBeneficiaryOpen}
         onClose={() => setIsBeneficiaryOpen(false)}
         onAdd={handleCreateBeneficiary}
+        currentProject={currentProject}
       />
 
       <AnimatePresence>
@@ -679,26 +697,11 @@ export default function Dashboard() {
       <WorkspaceModal 
         isOpen={isWorkspaceOpen} 
         onClose={() => setIsWorkspaceOpen(false)}
-        onReset={() => {
-          setIncidents([]);
-          setIsWorkspaceOpen(false);
-        }}
-        onScenario={(id) => {
-          const scenarioData = {
-            flood: [
-              { id: 101, title: 'Flash Flood - Wayanad, Kerala', location: 'Kerala', eventType: 'Water', severity: 9, resourceGap: 8, frequency: 7, timeSensitivity: 9, lat: 11.6050, lng: 76.0828 },
-              { id: 102, title: 'Brahmaputra Overflow - Assam', location: 'Assam', eventType: 'Medical', severity: 7, resourceGap: 9, frequency: 5, timeSensitivity: 8, lat: 26.2006, lng: 92.9376 }
-            ],
-            earthquake: [
-              { id: 201, title: 'Structural Collapse - Delhi NCR', location: 'Delhi', eventType: 'Infrastructure', severity: 10, resourceGap: 10, frequency: 9, timeSensitivity: 10, lat: 28.6139, lng: 77.2090 },
-              { id: 202, title: 'Casualties - Bhuj Region', location: 'Gujarat', eventType: 'Medical', severity: 9, resourceGap: 8, frequency: 8, timeSensitivity: 10, lat: 23.2420, lng: 69.6669 }
-            ],
-            conflict: [
-              { id: 301, title: 'IDP Movement - Jammu Border', location: 'J&K', eventType: 'Food', severity: 8, resourceGap: 9, frequency: 8, timeSensitivity: 7, lat: 32.7330, lng: 74.8643 }
-            ]
-          };
-          setIncidents(scenarioData[id] || []);
-        }}
+        currentProject={currentProject}
+        beneficiaries={beneficiaries}
+        volunteers={volunteers}
+        supplies={supplies}
+        allocationResult={allocationResult}
       />
     </div>
   );
