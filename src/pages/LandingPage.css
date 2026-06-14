@@ -112,9 +112,9 @@
   left: 50%;
   transform: translateX(-50%) translateY(10px);
   width: 220px;
-  background: rgba(10, 10, 20, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(10, 10, 20, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: 12px;
   padding: 1rem;
@@ -125,6 +125,30 @@
   box-shadow: 0 10px 40px rgba(0,0,0,0.5), 0 0 20px rgba(99, 102, 241, 0.1);
 }
 
+.nav-dropdown.mega {
+  width: 480px;
+  padding: 1.5rem;
+  display: flex;
+  gap: 2rem;
+}
+
+.nav-mega-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.nav-mega-title {
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  padding-left: 0.5rem;
+}
+
 .nav-item-container:hover .nav-dropdown {
   opacity: 1;
   visibility: visible;
@@ -133,7 +157,8 @@
 
 .dropdown-link {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
   padding: 0.875rem 1rem;
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.5);
@@ -145,6 +170,17 @@
   background: none;
   width: 100%;
   cursor: pointer;
+}
+
+.dropdown-link .link-icon {
+  margin-top: 2px;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dropdown-link:hover {
@@ -1848,13 +1884,307 @@
 
 /* Modal Enhancements */
 .info-modal {
-  max-width: 600px;
+  max-width: 800px;
+  width: 90%;
   line-height: 1.7;
 }
 
 .info-content {
   color: rgba(255, 255, 255, 0.6);
   font-size: 1rem;
+}
+
+/* ==============================
+   RICH MODAL CONTENT STYLES
+   ============================== */
+
+.bento-icon-primary {
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.15);
+  padding: 16px;
+  border-radius: 50%;
+  margin-bottom: 1rem;
+}
+
+.bento-icon-primary.glow {
+  box-shadow: 0 0 40px rgba(99, 102, 241, 0.4);
+}
+
+/* Mission & Bento Layouts */
+.modal-bento {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.modal-bento.central {
+  text-align: center;
+  align-items: center;
+  padding: 2rem 0;
+}
+
+.modal-bento-hero {
+  padding: 2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.modal-bento-hero p {
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.6;
+  max-width: 600px;
+  margin-top: 1rem;
+}
+
+.modal-bento-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.bento-card {
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.bento-icon {
+  color: #a78bfa;
+  margin-bottom: 1rem;
+}
+
+.bento-card h4 {
+  margin-bottom: 0.5rem;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.bento-card p {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Hackathon Tech Tags */
+.tech-tags {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.tech-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 20px;
+  font-size: 0.8125rem;
+  color: #c7d2fe;
+}
+
+/* Team Grid */
+.modal-team-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.team-card {
+  padding: 2rem 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.team-avatar {
+  width: 80px;
+  height: 80px;
+  background: rgba(168, 85, 247, 0.15);
+  border: 2px solid rgba(168, 85, 247, 0.3);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d8b4fe;
+  margin-bottom: 1rem;
+}
+
+.team-avatar.blue {
+  background: rgba(96, 165, 250, 0.15);
+  border-color: rgba(96, 165, 250, 0.3);
+  color: #93c5fd;
+}
+
+.team-avatar.green {
+  background: rgba(52, 211, 153, 0.15);
+  border-color: rgba(52, 211, 153, 0.3);
+  color: #6ee7b7;
+}
+
+.team-role {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8125rem;
+  margin-top: 0.5rem;
+}
+
+/* Contact */
+.modal-contact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.contact-info p {
+  color: rgba(255, 255, 255, 0.6);
+  margin: 1rem 0 2rem;
+  line-height: 1.6;
+  max-width: 500px;
+}
+
+.contact-email {
+  font-size: 1.25rem;
+  font-family: monospace;
+  color: #818cf8;
+  padding: 1rem 2rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 8px;
+  border: 1px dashed rgba(99, 102, 241, 0.4);
+}
+
+/* Docs Grid */
+.modal-docs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.docs-card {
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 3px solid #6366f1;
+  border-radius: 0 8px 8px 0;
+}
+
+.docs-icon {
+  color: #818cf8;
+  margin-bottom: 0.75rem;
+}
+
+.docs-card h4 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.docs-card p {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* Mock Terminal */
+.mock-terminal {
+  background: #0f111a;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin-top: 1.5rem;
+}
+
+.terminal-header {
+  background: #1a1d27;
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.terminal-header .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-header .dot.red { background: #ef4444; }
+.terminal-header .dot.yellow { background: #f59e0b; }
+.terminal-header .dot.green { background: #10b981; }
+
+.terminal-title {
+  margin-left: 1rem;
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.mock-terminal pre {
+  margin: 0;
+  padding: 1.5rem;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.875rem;
+  color: #a5b4fc;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+/* FAQ */
+.modal-faq {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.faq-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 1.5rem;
+  border-radius: 8px;
+}
+
+.faq-item h4 {
+  font-size: 1rem;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.faq-item p {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* Community */
+.modal-community {
+  text-align: center;
+  padding: 3rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.modal-community p {
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.6;
+  max-width: 500px;
+  margin: 1rem 0 2rem;
 }
 
 .tour-overlay {

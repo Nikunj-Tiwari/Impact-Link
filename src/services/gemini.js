@@ -140,27 +140,49 @@ export async function getStrategicAdvice(incidentData, priorityScore) {
   }
 }
 
+import { getBeneficiaryUrgency } from './logic';
+
 /**
- * Gemini Strategic Reasoning Layer (Global) → PRO model
- * Slow-cadence (5-min cooldown). Analyzes all active incidents for macro shifts.
+ * Gemini Strategic Advisory Layer — Pro
+ * Slow-cadence (5-min cooldown). Analyzes top beneficiaries for macro shifts.
  */
-export async function getGlobalStrategicAdvice(incidents) {
-  const incidentSummary = incidents.map(inc => 
-    `${inc.location}: ${inc.needType} (Severity ${inc.severity}, Gap ${inc.resourceGap})`
+export async function getGlobalStrategicAdvice(beneficiaries) {
+  const top = beneficiaries
+    .slice()
+    .sort((a, b) => getBeneficiaryUrgency(b) - getBeneficiaryUrgency(a))
+    .slice(0, 20);
+
+  const beneficiarySummary = top.map(b =>
+    `[${b.primaryNeed || 'General'}] ${b.village || b.district || `Lat:${(b.geo?.lat||0).toFixed(2)},Lng:${(b.geo?.lng||0).toFixed(2)}`} | Urgency:${getBeneficiaryUrgency(b)}`
   ).join('\n');
 
-  const prompt = `
-    You are the Lead Strategist for ImpactLink India. Analyze this set of active reports from across multiple Indian sectors:
+  const prompt = `You are the Lead AI Strategist for ImpactLink, a humanitarian crisis coordination platform.
 
-    ${incidentSummary}
+Analyze these ${top.length} most critical beneficiaries/needs (sorted by urgency):
+${beneficiarySummary}
 
-    Task:
-    1. Identify the "Hotspot of Misallocation" within India.
-    2. Suggest a "Lateral Resource Shift": Recommend moving resources from a less critical Indian area to a more critical one.
-    3. Give a 2-sentence tactical summary of the overall orchestration status.
-    
-    Keep advice sharp, brief, and tactical. Focus on solving misallocation.
-  `;
+Respond with ONLY a valid JSON object (no markdown, no code blocks). Use this exact schema:
+{
+  "hotspot": {
+    "location": "Name of worst misallocation zone",
+    "reason": "One sentence explaining why this zone is the hotspot",
+    "severity_score": 8.5,
+    "risk_level": "CRITICAL"
+  },
+  "lateral_shift": {
+    "from_zone": "Source zone with surplus resources",
+    "to_zone": "Target zone that needs resources",
+    "resource_type": "What type of resource to move (Medical Teams / Food Supplies / etc)",
+    "estimated_impact": "One sentence on expected outcome"
+  },
+  "tactical_summary": "Two sentence overall orchestration status and key strategic recommendation.",
+  "recommended_actions": [
+    "Action item 1 (specific and actionable)",
+    "Action item 2",
+    "Action item 3"
+  ],
+  "system_threat_level": "LOW | MODERATE | HIGH | CRITICAL"
+}`;
 
   try {
     const response = await callProModel(prompt);
@@ -171,6 +193,7 @@ export async function getGlobalStrategicAdvice(incidents) {
     throw error;
   }
 }
+
 
 /**
  * Gemini Natural Language Ingestion Layer — Flash
@@ -323,20 +346,20 @@ export async function generateTimelinePhases(description) {
 
 /**
  * AI Insight: Network Anomaly Detection → PRO model
- * Slow-cadence. Manually triggered. Analyzes DBSCAN clusters for anomalies.
+ * Analyzes hubs for tactical anomalies.
  */
-export async function getNetworkAnomalyAnalysis(clusters) {
-  const hotspotDesc = clusters.map(c => 
-    `Location Hub: ${c.name || `Cluster #${c.cluster}`} - ${c.count} incidents, avg severity ${c.avgSeverity.toFixed(1)}`
+export async function getNetworkAnomalyAnalysis(hubs) {
+  const hotspotDesc = hubs.map(c => 
+    `Location Hub: ${c.name} - ${c.count} beneficiaries, avg urgency ${c.avgUrgency?.toFixed(1)}, avg score ${c.avgScore?.toFixed(1)}`
   ).join('\n');
 
   const prompt = `
-    Analyze these DBSCAN hotspot clusters from our disaster response network in India:
+    Analyze these beneficiary hubs from our disaster response network in India:
     
     ${hotspotDesc}
 
     Task:
-    Perform an "Anomaly Detection" scan. Identify if there is a severe anomaly (e.g. one cluster having vastly more incidents or disproportionately high severity compared to others).
+    Perform an "Anomaly Detection" scan. Identify if there is a severe anomaly (e.g. one hub having vastly more beneficiaries or disproportionately high urgency compared to others).
     Provide a concise 2-sentence tactical report. 
     1st sentence: State the integrity status (e.g., "Network Integrity Compromised" or "Network Integrity Optimal").
     2nd sentence: Describe the anomaly in operational terms.
@@ -360,6 +383,61 @@ export async function getNetworkAnomalyAnalysis(clusters) {
     }
 
     return "Network Integrity Unknown.\nFailed to fetch live AI anomaly scan due to regional API latency.";
+  }
+}
+
+/**
+ * AI Insight: Predictive Bottlenecks → PRO model
+ * Forecasts where resources will run out.
+ */
+export async function getPredictiveBottlenecks(hubs) {
+  const topHubs = hubs.slice(0, 5).map(c => 
+    `${c.name}: ${c.count} beneficiaries, urgency ${c.avgUrgency?.toFixed(1)}`
+  ).join('\n');
+
+  const prompt = `
+    Analyze these highly active beneficiary hubs:
+    ${topHubs}
+
+    Task:
+    Forecast the next major resource bottleneck in the next 48 hours.
+    Provide exactly ONE short sentence identifying the hub and the impending risk.
+    Keep it highly tactical.
+  `;
+
+  try {
+    const response = await callProModel(prompt);
+    return response.text;
+  } catch (error) {
+    return "Insufficient data to project 48-hour bottlenecks reliably.";
+  }
+}
+
+/**
+ * AI Insight: Lateral Shift Recommendations → PRO model
+ * Recommends shifting resources between hubs.
+ */
+export async function getLateralShiftRecommendations(hubs) {
+  if (hubs.length < 2) return "Insufficient hubs to calculate lateral shifts.";
+  
+  const hubDesc = hubs.slice(0, 8).map(c => 
+    `${c.name}: Urgency ${c.avgUrgency?.toFixed(1)}, Score ${c.avgScore?.toFixed(1)}`
+  ).join('\n');
+
+  const prompt = `
+    Review the following hubs and their operational stress scores:
+    ${hubDesc}
+
+    Task:
+    Recommend exactly ONE specific lateral shift (moving volunteers/resources from a low-stress hub to a high-stress hub).
+    Return your recommendation in ONE concise, professional sentence (e.g. "Shift 3 medical volunteers from Hub A to Hub B to stabilize rising urgency.").
+  `;
+
+  try {
+    const response = await callProModel(prompt);
+    return response.text;
+  } catch (error) {
+    return "Lateral shift calculations are currently offline.";
   }
 }
 

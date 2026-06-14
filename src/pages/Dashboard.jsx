@@ -26,7 +26,10 @@ import {
   List,
   Mail,
   Copy,
-  Check
+  Check,
+  Clock,
+  ArrowRightLeft,
+  Loader2
 } from 'lucide-react';
 import BeneficiaryModal from '../components/Modals/BeneficiaryModal';
 import VolunteerModal from '../components/Modals/VolunteerModal';
@@ -43,8 +46,8 @@ import RedeploymentStrategy from '../components/Radar/RedeploymentStrategy';
 import NewIncidentModal from '../components/Modals/NewIncidentModal';
 import WorkspaceModal from '../components/Modals/WorkspaceModal';
 import ProjectWizard from '../components/Modals/ProjectWizard/ProjectWizard';
-import { extractDataFromReport, getNetworkAnomalyAnalysis, getStrategicReallocationAdvice } from '../services/gemini';
-import { getSectorHealthStatus, getStrategicMissions, getUrgencyDecay } from '../services/logic';
+import { extractDataFromReport, getNetworkAnomalyAnalysis, getStrategicReallocationAdvice, getPredictiveBottlenecks, getLateralShiftRecommendations } from '../services/gemini';
+import { getSectorHealthStatus, getStrategicMissions, getUrgencyDecay, getBeneficiaryHubs } from '../services/logic';
 import { runAllocation, fetchCriticalUnmet, rerunAllocation } from '../services/api';
 
 import { logout } from '../services/firebase';
@@ -534,14 +537,6 @@ export default function Dashboard() {
             {isAllocating ? 'Allocating...' : allocationResult ? `Allocated · ${volunteers.filter(v => v.currentAssignmentId && v.assignmentStatus !== 'unassigned').length}` : 'Run Allocation'}
           </button>
 
-          <button 
-            className="btn-primary" 
-            onClick={() => setIsNewIncidentOpen(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-          >
-            <Plus size={14} /> Incident
-          </button>
-
           
           <button 
             onClick={handleLogout}
@@ -611,8 +606,8 @@ export default function Dashboard() {
                 onPanTo={(lat, lng) => setMapPanTarget({ lat, lng })}
               />
             )}
-            {activeTab === 'analysis' && <AnalysisTab incidents={incidents} volunteers={volunteers} />}
-            {activeTab === 'ai_radar' && <AIRadarTab clusters={strategicClusters} incidents={incidents} />}
+            {activeTab === 'analysis' && <AnalysisTab beneficiaries={beneficiaries} volunteers={volunteers} allocationResult={allocationResult} />}
+            {activeTab === 'ai_radar' && <AIInsightsTab beneficiaries={beneficiaries} volunteers={volunteers} />}
             {activeTab === 'supplies' && <ResourceLogisticsTab project={currentProject} resources={supplies} onUpdateResource={handleUpdateResource} />}
             {activeTab === 'beneficiaries' && <BeneficiariesTab beneficiaries={beneficiaries} onView={(b) => {
               setSelectedBeneficiary(b);
@@ -1339,19 +1334,63 @@ function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispa
   );
 }
 
-function AnalysisTab({ incidents, volunteers }) {
+function AnalysisTab({ beneficiaries, volunteers, allocationResult }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-       <div style={{ padding: '0 1rem', display: 'flex', gap: '0.75rem', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success)' }} />
-          Multi-Sector Intelligence Synchronized
-       </div>
-       <SectorPulseBoard incidents={incidents} volunteers={volunteers} />
-       <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
-          <MisallocationRadar incidents={incidents} />
-          <AIGlobalAdvisory incidents={incidents} />
-       </div>
-       <RedeploymentStrategy incidents={incidents} volunteers={volunteers} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+
+      {/* Header status bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <motion.div
+          animate={{ scale: [1, 1.4, 1], opacity: [0.8, 0.3, 0.8] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          style={{ width: '7px', height: '7px', borderRadius: '50%', background: beneficiaries.length > 0 ? '#f59e0b' : '#10b981', flexShrink: 0 }}
+        />
+        <span style={{ fontSize: '0.6875rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>
+          Multi-Sector Intelligence Layer · {beneficiaries.length} beneficiaries · {volunteers.length} responders
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+          {[{ label: 'Pass 1 Engine', active: !!allocationResult }, { label: 'AI Advisory', active: true }, { label: 'Threat Matrix', active: beneficiaries.length > 0 }].map(s => (
+            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.5rem', borderRadius: '4px', background: s.active ? 'rgba(16,185,129,0.08)' : 'transparent', border: `1px solid ${s.active ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)'}` }}>
+              <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: s.active ? '#10b981' : '#64748b' }} />
+              <span style={{ fontSize: '0.5625rem', color: s.active ? '#10b981' : 'var(--text-dim)', fontWeight: 600 }}>{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Operational Pulse Grid */}
+      <div>
+        <div style={{ fontSize: '0.5625rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+          Operational Pulse
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+        </div>
+        <SectorPulseBoard beneficiaries={beneficiaries} volunteers={volunteers} />
+      </div>
+
+      {/* Threat Matrix + AI Command */}
+      <div>
+        <div style={{ fontSize: '0.5625rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+          Intelligence Analysis
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '1.5rem', alignItems: 'flex-start' }}>
+          <MisallocationRadar beneficiaries={beneficiaries} volunteers={volunteers} />
+          <AIGlobalAdvisory beneficiaries={beneficiaries} />
+        </div>
+      </div>
+
+      {/* Resource Flow Intelligence */}
+      <div>
+        <div style={{ fontSize: '0.5625rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+          Resource Flow
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+        </div>
+        <RedeploymentStrategy beneficiaries={beneficiaries} volunteers={volunteers} allocationResult={allocationResult} />
+      </div>
+
     </div>
   );
 }
@@ -1395,94 +1434,138 @@ function IngestionTab({ onIngest, isIngesting, setIsIngesting }) {
   );
 }
 
-function AIRadarTab({ clusters, incidents }) {
-  const hotspots = clusters.hotspots || [];
-  const [anomalyReport, setAnomalyReport] = useState(null);
-  const [isScanning, setIsScanning] = useState(false);
+function AIInsightsTab({ beneficiaries, volunteers }) {
+  const hubs = getBeneficiaryHubs(beneficiaries, volunteers);
+  const [reports, setReports] = useState({ anomaly: null, bottleneck: null, shift: null });
+  const [isScanning, setIsScanning] = useState({ anomaly: false, bottleneck: false, shift: false });
 
-  // Manual Trigger: Definitively kills rate-limit looping by putting control in the user's hands
-  const triggerScan = async () => {
-    setIsScanning(true);
-    if (hotspots.length === 0) {
-      setAnomalyReport("Network Integrity Optimal.\nNo significant spatial anomalies detected outside of known clusters in the current time-window.");
-      setIsScanning(false);
-      return;
+  const runScan = async (type) => {
+    setIsScanning(prev => ({ ...prev, [type]: true }));
+    let res = null;
+    if (hubs.length > 0) {
+      if (type === 'anomaly') res = await getNetworkAnomalyAnalysis(hubs);
+      if (type === 'bottleneck') res = await getPredictiveBottlenecks(hubs);
+      if (type === 'shift') res = await getLateralShiftRecommendations(hubs);
+    } else {
+      res = "Awaiting field data to run intelligence algorithms.";
     }
-    const report = await getNetworkAnomalyAnalysis(hotspots);
-    setAnomalyReport(report);
-    setIsScanning(false);
+    setReports(prev => ({ ...prev, [type]: res }));
+    setIsScanning(prev => ({ ...prev, [type]: false }));
+  };
+
+  const renderCard = (title, icon, type, description, result) => {
+    const isWorking = isScanning[type];
+    const Icon = icon;
+    
+    return (
+      <div className="pane" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: 'var(--bg-pane)', backdropFilter: 'blur(24px)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div className="pane-header" style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Icon size={14} color="var(--accent-primary)" /> {title}
+            </div>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{description}</p>
+          </div>
+          <button 
+            onClick={() => runScan(type)}
+            disabled={isWorking}
+            style={{ 
+              background: isWorking ? 'rgba(255,255,255,0.05)' : 'rgba(99, 102, 241, 0.1)', 
+              border: `1px solid ${isWorking ? 'rgba(255,255,255,0.1)' : 'rgba(99, 102, 241, 0.3)'}`,
+              color: isWorking ? 'var(--text-dim)' : '#c7d2fe', 
+              padding: '0.4rem 0.75rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600,
+              cursor: isWorking ? 'default' : 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '0.4rem'
+            }}
+          >
+            {isWorking ? (
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                <Loader2 size={12} />
+              </motion.div>
+            ) : <Zap size={12} />}
+            {isWorking ? 'SCANNING' : 'RUN SCAN'}
+          </button>
+        </div>
+        
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', padding: '1.5rem', position: 'relative', overflow: 'hidden' }}>
+          {isWorking ? (
+            <div style={{ position: 'absolute', inset: 0, opacity: 0.1, background: 'linear-gradient(90deg, transparent, var(--accent-brand), transparent)', backgroundSize: '200% 100%' }} />
+          ) : null}
+          
+          {isWorking ? (
+            <div style={{ color: 'var(--accent-brand)', fontSize: '0.8125rem', fontWeight: 600, letterSpacing: '0.1em' }}>
+              <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>ANALYZING TACTICAL DATA...</motion.span>
+            </div>
+          ) : !result ? (
+            <div style={{ color: 'var(--text-dim)', fontSize: '0.8125rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+              <ShieldCheck size={24} opacity={0.3} />
+              System Standby. Awaiting Manual Trigger.
+            </div>
+          ) : (
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ width: '100%' }}>
+              {result.split('\n').map((line, idx) => (
+                <div key={idx} style={{ color: idx === 0 ? '#fff' : 'var(--text-muted)', fontSize: idx === 0 ? '1rem' : '0.8125rem', fontWeight: idx === 0 ? 600 : 400, marginBottom: '0.4rem', textAlign: 'left', lineHeight: 1.5 }}>
+                  {line}
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-      <div className="pane">
-        <div className="pane-header"><Radar size={14} /> AI Cluster Analysis [DBSCAN]</div>
-        <div style={{ padding: '2rem' }}>
-          <p style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-            Machine learning has identified {hotspots.length} high-density clusters of misallocated resources.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {hotspots.slice(0, 5).map((c, i) => (
-               <div key={i} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ fontSize: '0.8125rem', color: '#fff' }}>{c.name || `Hotspot Cluster #${c.cluster}`}</span>
-                    <span style={{ fontSize: '0.8125rem', color: 'var(--error)' }}>Intensity: {c.avgSeverity?.toFixed(1) || 'N/A'}</span>
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Centroid: {c.lat?.toFixed(4)}, {c.lng?.toFixed(4)} ({c.count} incidents)</div>
-               </div>
-            ))}
-            {hotspots.length === 0 && (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8125rem', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-                No significant clusters detected. Awaiting more tactical data...
-              </div>
-            )}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem', alignContent: 'start' }}>
+      
+      {/* Overview Banner */}
+      <div className="pane" style={{ gridColumn: 'span 12', padding: '1.5rem 2rem', background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.1) 0%, rgba(15, 20, 25, 0.85) 100%)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+           <div style={{ fontSize: '1.125rem', fontWeight: 600, color: '#fff', marginBottom: '0.25rem' }}>Gemini 2.5 Strategy Core</div>
+           <div style={{ fontSize: '0.8125rem', color: 'var(--text-dim)' }}>Connecting live beneficiary data to advanced LLM tactical reasoning layers.</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fff' }}>{hubs.length}</div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Active Hubs</div>
+          </div>
+          <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fff' }}>{beneficiaries.length}</div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Total Beneficiaries</div>
           </div>
         </div>
       </div>
-      <div className="pane" style={{ background: 'linear-gradient(180deg, var(--bg-pane) 0%, rgba(20,20,20,0.8) 100%)' }}>
-          <div className="pane-header"><Zap size={14} /> Anomaly Detection</div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '4rem', textAlign: 'center' }}>
-             {isScanning ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
-                   <div style={{ position: 'relative' }}>
-                      <motion.div 
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-                        style={{ width: '60px', height: '60px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.05)', borderTopColor: 'var(--success)' }}
-                      />
-                      <Zap size={20} color="var(--success)" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }} />
-                   </div>
-                   <span style={{ color: 'var(--text-dim)', fontSize: '0.8125rem', letterSpacing: '0.05em' }}>RUNNING NEURAL SCAN...</span>
-                </div>
-             ) : (
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                   <ShieldCheck size={48} color={!anomalyReport ? 'var(--text-dim)' : anomalyReport.toLowerCase().includes('optimal') ? 'var(--success)' : 'var(--warning)'} style={{ marginBottom: '1.5rem', opacity: 0.7 }} />
-                   
-                   {!anomalyReport ? (
-                      <h3 style={{ color: 'var(--text-dim)', fontSize: '0.875rem', fontWeight: 400 }}>AI Scanner Offline. Awaiting manual trigger.</h3>
-                   ) : (
-                      anomalyReport.split('\n').map((line, idx) => (
-                        <h3 key={idx} style={{ 
-                           color: idx === 0 ? '#fff' : 'var(--text-dim)', 
-                           marginBottom: '0.5rem',
-                           fontSize: idx === 0 ? '1.125rem' : '0.875rem',
-                           fontWeight: idx === 0 ? 600 : 400
-                        }}>{line}</h3>
-                      ))
-                   )}
 
-                   <button 
-                     onClick={triggerScan} 
-                     style={{ marginTop: '2rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                     onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                     onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                   >
-                     <Zap size={14} /> Scan Data Stream
-                   </button>
-                </motion.div>
-             )}
-          </div>
+      <div style={{ gridColumn: 'span 4' }}>
+        {renderCard(
+          "Network Anomaly Detection", 
+          Radar, 
+          'anomaly', 
+          "Scans all regional hubs for disproportionate severity spikes or data anomalies.",
+          reports.anomaly
+        )}
       </div>
+
+      <div style={{ gridColumn: 'span 4' }}>
+        {renderCard(
+          "Predictive Bottlenecks", 
+          Clock, 
+          'bottleneck', 
+          "Forecasts which hubs are at risk of catastrophic resource failure within 48h.",
+          reports.bottleneck
+        )}
+      </div>
+
+      <div style={{ gridColumn: 'span 4' }}>
+        {renderCard(
+          "Lateral Shift Tactics", 
+          ArrowRightLeft, 
+          'shift', 
+          "Identifies optimal responder redeployment routes to stabilize rising urgency.",
+          reports.shift
+        )}
+      </div>
+
     </div>
   );
 }

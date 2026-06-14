@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionTemplate, useMotionValue, useScroll, useTransform } from 'framer-motion';
-import { Zap, Users, Globe, Database, Cpu, Activity, ShieldCheck, Target, BarChart3, X, Sparkles, Lightbulb, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Zap, Users, Globe, Database, Cpu, Activity, ShieldCheck, Target, BarChart3, X, Sparkles, Lightbulb, ArrowRight, CheckCircle2, BookOpen, Terminal, HelpCircle, Trophy, Clock, Mail, User, Shield, FileText, Lock } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
@@ -56,25 +56,197 @@ export default function LandingPage() {
   ];
 
   const infoContent = {
-    privacy: {
-      title: "Privacy Policy",
-      content: "ImpactLink is committed to protecting sensitive humanitarian data. We adhere to high security standards, ensuring that all field reports and PII are encrypted at rest and in transit. Data is used solely for the purpose of resource allocation and disaster response optimization."
+    mission: {
+      title: "Our Mission",
+      content: (
+        <div className="modal-bento">
+          <div className="modal-bento-hero">
+            <Globe size={48} className="bento-icon-primary" />
+            <h3>Eliminating Resource Misallocation</h3>
+            <p>ImpactLink was born from the need to synchronize fragmented NGO efforts. By bridging the gap between field surveys and high-level orchestration, we ensure that aid reaches the right sectors at the right time.</p>
+          </div>
+          <div className="modal-bento-grid">
+            <div className="bento-card">
+              <Target size={24} className="bento-icon" />
+              <h4>Precision Matching</h4>
+              <p>Routing exact volunteer skills to specific crisis nodes.</p>
+            </div>
+            <div className="bento-card">
+              <ShieldCheck size={24} className="bento-icon" />
+              <h4>Zero Data Loss</h4>
+              <p>Structured ingestion prevents critical needs from slipping through the cracks.</p>
+            </div>
+          </div>
+        </div>
+      )
     },
-    license: {
-      title: "Project License",
-      content: "This project is developed as part of the Google Solutions Hackathon 2026. Code is provided under the MIT License for educational and demonstration purposes. All rights to the ImpactLink brand and architecture are reserved."
+    hackathon: {
+      title: "Google Solutions Hackathon 2026",
+      content: (
+        <div className="modal-bento central">
+          <Trophy size={64} className="bento-icon-primary glow" />
+          <h3 style={{marginTop: '1rem'}}>Project Architecture & License</h3>
+          <p style={{marginBottom: '2rem'}}>This project is developed as part of the Google Solutions Hackathon 2026. Code is provided under the MIT License for educational and demonstration purposes. All rights to the ImpactLink brand and architecture are reserved.</p>
+          <div className="tech-tags">
+            <span className="tech-tag"><Sparkles size={14}/> Gemini 1.5 Flash</span>
+            <span className="tech-tag"><Database size={14}/> Firebase Firestore</span>
+            <span className="tech-tag"><Globe size={14}/> Google Maps Platform</span>
+          </div>
+        </div>
+      )
     },
-    about: {
-      title: "About ImpactLink",
-      content: "ImpactLink was born from the need to synchronize fragmented NGO efforts. By bridging the gap between field surveys and high-level orchestration, we ensure that aid reaches the right sectors at the right time."
+    team: {
+      title: "Command Center Architects",
+      content: (
+        <div className="modal-team-grid">
+          <div className="team-card">
+            <div className="team-avatar"><User size={32} /></div>
+            <h4>Lead Strategist</h4>
+            <span className="team-role">System Architecture</span>
+          </div>
+          <div className="team-card">
+            <div className="team-avatar blue"><User size={32} /></div>
+            <h4>AI Engineer</h4>
+            <span className="team-role">Gemini Orchestration</span>
+          </div>
+          <div className="team-card">
+            <div className="team-avatar green"><User size={32} /></div>
+            <h4>Logistics Lead</h4>
+            <span className="team-role">Fleet Synchronization</span>
+          </div>
+        </div>
+      )
+    },
+    contact: {
+      title: "Contact ImpactLink",
+      content: (
+        <div className="modal-contact">
+          <div className="contact-info">
+            <Mail size={32} className="bento-icon-primary" />
+            <h3>Enterprise Deployment</h3>
+            <p>Interested in deploying ImpactLink's orchestration engine for your NGO or government agency? Reach out to our deployment specialists.</p>
+            <div className="contact-email">deployments@impactlink.demo</div>
+          </div>
+        </div>
+      )
     },
     docs: {
-      title: "Documentation",
-      content: "The ImpactLink API and Integration guides are currently being finalized. Our documentation will cover Gemini orchestration layers, Map clustering logic, and secure Data Ingestion protocols."
+      title: "Platform Documentation",
+      content: (
+        <div className="modal-docs-grid">
+          <div className="docs-card">
+            <BookOpen size={20} className="docs-icon" />
+            <h4>Getting Started</h4>
+            <p>ImpactLink runs on Vite + React. Start the client via <code>npm run dev</code> and the Node.js orchestration server via <code>node server.js</code>. Ensure your <code>.env</code> contains your Firebase config and Gemini API Key.</p>
+          </div>
+          <div className="docs-card">
+            <Cpu size={20} className="docs-icon" />
+            <h4>Gemini Integration</h4>
+            <p>We leverage <code>gemini-3-flash-preview</code>. Our multimodal layer parses photos of handwritten field surveys, while our tactical LLM runs predictive bottleneck analysis across live Beneficiary Hubs.</p>
+          </div>
+          <div className="docs-card">
+            <Activity size={20} className="docs-icon" />
+            <h4>Allocation Logic</h4>
+            <p>Our dual-pass dispatcher triggers via <code>/api/dispatch/allocate</code>. Pass 1 performs greedy geo-matching for residents. Pass 2 mobilizes the mobile fleet via semantic skill mapping.</p>
+          </div>
+          <div className="docs-card">
+            <Database size={20} className="docs-icon" />
+            <h4>Data Security</h4>
+            <p>Field intelligence is secured via Firebase Auth. Every REST call to the Express server is validated using Bearer ID tokens in our <code>getAuthHeaders()</code> wrapper.</p>
+          </div>
+        </div>
+      )
+    },
+    api: {
+      title: "API Reference",
+      content: (
+        <div className="modal-api">
+          <p style={{ color: 'rgba(255,255,255,0.6)', marginBottom: '1rem' }}>The ImpactLink API allows external fleet systems to trigger the dual-pass allocator and query live unmet needs.</p>
+          <div className="mock-terminal">
+            <div className="terminal-header">
+              <span className="dot red"></span><span className="dot yellow"></span><span className="dot green"></span>
+              <span className="terminal-title">POST /api/dispatch/allocate</span>
+            </div>
+            <pre>
+{`{
+  "projectId": "PROJ-8819A",
+  "radiusOverride": 25.0
+}
+
+// Response
+{
+  "success": true,
+  "data": {
+    "matches": [
+      { "volunteerId": "V-12", "beneficiaryId": "B-44", "distance": 4.2 }
+    ],
+    "unmet": ["B-45", "B-88"]
+  }
+}`}
+            </pre>
+          </div>
+        </div>
+      )
     },
     faq: {
       title: "Frequently Asked Questions",
-      content: "How does the AI work? Is the map data real-time? How do I onboard my NGO? Find answers to these and more in our upcoming Help Center."
+      content: (
+        <div className="modal-faq">
+          <div className="faq-item">
+            <h4>How does the AI allocation work?</h4>
+            <p>We use a deterministic greedy-matching algorithm first, followed by Gemini 3 Flash to resolve complex edge cases, infer missing tactical skills, and recommend lateral shift tactics.</p>
+          </div>
+          <div className="faq-item">
+            <h4>Is the map data real-time?</h4>
+            <p>Yes. The Kinetic Map pulses in real-time as WebSocket events and API patches (<code>PATCH /api/incidents/:id</code>) update incident severity from the field.</p>
+          </div>
+          <div className="faq-item">
+            <h4>How do I onboard my NGO?</h4>
+            <p>NGO onboarding requires an enterprise API key to sync your existing volunteer fleet. If you are testing locally, the system falls back to a <code>test-token</code> in localStorage.</p>
+          </div>
+        </div>
+      )
+    },
+    community: {
+      title: "Community Forum",
+      content: (
+        <div className="modal-community">
+          <Users size={48} className="bento-icon-primary" />
+          <h3>Join the Responder Network</h3>
+          <p>Share deployment strategies, discuss map anomalies, and connect with other crisis response coordinators worldwide. (Feature currently in beta)</p>
+          <button className="btn btn-primary" style={{marginTop: '1rem'}}>Enter Forum</button>
+        </div>
+      )
+    },
+    privacy: {
+      title: "Privacy Policy",
+      content: (
+        <div className="modal-bento central">
+          <Shield size={48} className="bento-icon-primary glow" />
+          <h3 style={{marginTop: '1rem'}}>Data Protection</h3>
+          <p>ImpactLink is committed to protecting sensitive humanitarian data. We adhere to high security standards, ensuring that all field reports and PII are encrypted at rest and in transit. Data is used solely for the purpose of resource allocation and disaster response optimization.</p>
+        </div>
+      )
+    },
+    terms: {
+      title: "Terms of Service",
+      content: (
+        <div className="modal-bento central">
+          <FileText size={48} className="bento-icon-primary glow" />
+          <h3 style={{marginTop: '1rem'}}>Service Agreement</h3>
+          <p>By accessing the ImpactLink platform, you agree to utilize our deterministic engine strictly for coordinated disaster relief and nonprofit orchestration. Misuse of the dispatch API may result in immediate revocation of your enterprise token.</p>
+        </div>
+      )
+    },
+    security: {
+      title: "Security & Auditing",
+      content: (
+        <div className="modal-bento central">
+          <Lock size={48} className="bento-icon-primary glow" />
+          <h3 style={{marginTop: '1rem'}}>Enterprise-Grade Security</h3>
+          <p>All orchestration data is strictly sandboxed. Our system leverages Firebase Authentication combined with our custom Bearer Token wrapper. Regular penetration testing is conducted on our core Express routing layer.</p>
+        </div>
+      )
     }
   };
 
@@ -88,34 +260,132 @@ export default function LandingPage() {
         </div>
 
         <div className="nav-links" style={{ gap: '2rem' }}>
+          
+          {/* Product Mega Menu */}
           <div className="nav-item-container">
             <button className="btn-text">Product</button>
-            <div className="nav-dropdown">
-              <button className="dropdown-link" onClick={() => setInfoModal('docs')}>
-                <strong>Features</strong> View core orchestration capabilities.
-              </button>
-              <button className="dropdown-link" onClick={() => setCurrentTourStep(0)}>
-                <strong>Guided Tour</strong> Walk through the mission logic.
-              </button>
-              <button className="dropdown-link" onClick={() => openAuth('signup')}>
-                <strong>Simulator</strong> Access the AI decision engine.
-              </button>
+            <div className="nav-dropdown mega">
+              <div className="nav-mega-column">
+                <div className="nav-mega-title">Core Platform</div>
+                <button className="dropdown-link" onClick={() => setCurrentTourStep(0)}>
+                  <div className="link-icon"><Activity size={16} /></div>
+                  <div>
+                    <strong>Allocation Engine</strong>
+                    <span>Dual-pass deterministic optimization.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => openAuth('signup')}>
+                  <div className="link-icon"><Clock size={16} /></div>
+                  <div>
+                    <strong>Temporal Planner</strong>
+                    <span>AI-assisted logistics & decay tracking.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => setInfoModal('docs')}>
+                  <div className="link-icon"><Cpu size={16} /></div>
+                  <div>
+                    <strong>Gemini Intelligence</strong>
+                    <span>Live LLM tactical reasoning layer.</span>
+                  </div>
+                </button>
+              </div>
+              <div className="nav-mega-column">
+                <div className="nav-mega-title">Use Cases & Demos</div>
+                <button className="dropdown-link" onClick={() => setCurrentTourStep(0)}>
+                  <div className="link-icon"><Target size={16} /></div>
+                  <div>
+                    <strong>Interactive Demo</strong>
+                    <span>Walk through the mission logic.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => openAuth('signup')}>
+                  <div className="link-icon"><ShieldCheck size={16} /></div>
+                  <div>
+                    <strong>Disaster Relief</strong>
+                    <span>High-urgency deployment simulation.</span>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
 
+          {/* Resources Mega Menu */}
           <div className="nav-item-container">
             <button className="btn-text">Resources</button>
-            <div className="nav-dropdown">
-              <button className="dropdown-link" onClick={() => setInfoModal('docs')}>
-                <strong>Documentation</strong> API and Integration guides.
-              </button>
-              <button className="dropdown-link" onClick={() => setInfoModal('faq')}>
-                <strong>FAQ</strong> Common questions and answers.
-              </button>
+            <div className="nav-dropdown mega">
+              <div className="nav-mega-column">
+                <div className="nav-mega-title">Developer Tools</div>
+                <button className="dropdown-link" onClick={() => setInfoModal('docs')}>
+                  <div className="link-icon"><BookOpen size={16} /></div>
+                  <div>
+                    <strong>Documentation</strong>
+                    <span>Core platform integration guides.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => setInfoModal('api')}>
+                  <div className="link-icon"><Terminal size={16} /></div>
+                  <div>
+                    <strong>API Reference</strong>
+                    <span>Endpoints for NGO systems.</span>
+                  </div>
+                </button>
+              </div>
+              <div className="nav-mega-column">
+                <div className="nav-mega-title">Support & Community</div>
+                <button className="dropdown-link" onClick={() => setInfoModal('faq')}>
+                  <div className="link-icon"><HelpCircle size={16} /></div>
+                  <div>
+                    <strong>Help Center & FAQ</strong>
+                    <span>Answers to common questions.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => setInfoModal('community')}>
+                  <div className="link-icon"><Users size={16} /></div>
+                  <div>
+                    <strong>Community Forum</strong>
+                    <span>Connect with responders globally.</span>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
 
-          <button onClick={() => setInfoModal('about')} className="btn-text">About</button>
+          {/* About Mega Menu */}
+          <div className="nav-item-container">
+            <button className="btn-text">About</button>
+            <div className="nav-dropdown mega" style={{ width: '380px' }}>
+              <div className="nav-mega-column">
+                <button className="dropdown-link" onClick={() => setInfoModal('mission')}>
+                  <div className="link-icon"><Globe size={16} /></div>
+                  <div>
+                    <strong>Our Mission</strong>
+                    <span>Why we built ImpactLink.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => setInfoModal('hackathon')}>
+                  <div className="link-icon"><Trophy size={16} /></div>
+                  <div>
+                    <strong>Google Hackathon</strong>
+                    <span>Project background & license.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => setInfoModal('team')}>
+                  <div className="link-icon"><Users size={16} /></div>
+                  <div>
+                    <strong>Team</strong>
+                    <span>Meet the engineers behind the system.</span>
+                  </div>
+                </button>
+                <button className="dropdown-link" onClick={() => setInfoModal('contact')}>
+                  <div className="link-icon"><Mail size={16} /></div>
+                  <div>
+                    <strong>Contact Us</strong>
+                    <span>Reach out for enterprise access.</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
           
           <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.1)', margin: '0 0.5rem' }} />
           
@@ -559,7 +829,7 @@ export default function LandingPage() {
               <button className="footer-link" onClick={() => openAuth('signup')}>Features</button>
               <button className="footer-link" onClick={() => setCurrentTourStep(0)}>Interactive Demo</button>
               <button className="footer-link" onClick={() => openAuth('signup')}>Simulator</button>
-              <button className="footer-link" onClick={() => setInfoModal('docs')}>Integrations</button>
+              <button className="footer-link" onClick={() => setInfoModal('api')}>Integrations</button>
             </div>
           </motion.div>
 
@@ -574,8 +844,8 @@ export default function LandingPage() {
             <div className="footer-links">
               <button className="footer-link" onClick={() => setInfoModal('docs')}>Documentation</button>
               <button className="footer-link" onClick={() => setInfoModal('faq')}>FAQ</button>
-              <button className="footer-link" onClick={() => setInfoModal('docs')}>API Reference</button>
-              <button className="footer-link" onClick={() => setInfoModal('about')}>Status</button>
+              <button className="footer-link" onClick={() => setInfoModal('api')}>API Reference</button>
+              <button className="footer-link" onClick={() => setInfoModal('community')}>Community</button>
             </div>
           </motion.div>
 
@@ -588,8 +858,8 @@ export default function LandingPage() {
           >
             <h4>Company</h4>
             <div className="footer-links">
-              <button className="footer-link" onClick={() => setInfoModal('about')}>About Us</button>
-              <button className="footer-link" onClick={() => setInfoModal('about')}>Impact</button>
+              <button className="footer-link" onClick={() => setInfoModal('team')}>About Us</button>
+              <button className="footer-link" onClick={() => setInfoModal('mission')}>Impact</button>
             </div>
           </motion.div>
 
@@ -603,9 +873,9 @@ export default function LandingPage() {
             <h4>Legal</h4>
             <div className="footer-links">
               <button className="footer-link" onClick={() => setInfoModal('privacy')}>Privacy Policy</button>
-              <button className="footer-link" onClick={() => setInfoModal('privacy')}>Terms of Service</button>
-              <button className="footer-link" onClick={() => setInfoModal('license')}>License</button>
-              <button className="footer-link" onClick={() => setInfoModal('privacy')}>Security</button>
+              <button className="footer-link" onClick={() => setInfoModal('terms')}>Terms of Service</button>
+              <button className="footer-link" onClick={() => setInfoModal('hackathon')}>License</button>
+              <button className="footer-link" onClick={() => setInfoModal('security')}>Security</button>
             </div>
           </motion.div>
         </div>

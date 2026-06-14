@@ -184,4 +184,99 @@ export const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
+// ==========================================
+// BENEFICIARY ADAPTERS (For Threat Radar)
+// ==========================================
 
+export const getBeneficiaryUrgency = (b) => {
+  if (b.calculatedUrgency) return b.calculatedUrgency;
+  if (b.vulnerabilityScore) return Math.min(10, Math.max(1, b.vulnerabilityScore));
+  if (b.needSeverity === 'high') return 8;
+  if (b.needSeverity === 'low') return 3;
+  
+  // If no score is provided, use a stable deterministic calculation based on age
+  if (b.age) {
+    if (b.age > 65) return 8.5;
+    if (b.age < 12) return 8.0;
+    return 4.0 + (b.age % 4); // Distribute between 4 and 7
+  }
+  return 5;
+};
+
+const getBeneficiaryLocation = (b) => {
+  return b.village || (b.geo?.formattedAddress ? b.geo.formattedAddress.split(',')[0] : null) || b.rawLocation || b.district || 'Unknown Location';
+};
+
+export const calculateBeneficiaryMisallocationScore = (b, volunteers = []) => {
+  const urgency = getBeneficiaryUrgency(b);
+  
+  // Calculate simulated resource gap based on local volunteer density
+  const locationName = getBeneficiaryLocation(b);
+  const localVols = volunteers.filter(v => v.locationId?.name === locationName || locationName.includes(v.locationId?.name || '---')).length;
+  
+  // High urgency, low local volunteers = high gap
+  const resourceGap = Math.max(1, urgency - (localVols * 1.5));
+  
+  const score = (urgency * 0.6) + (resourceGap * 0.4);
+  return parseFloat(score.toFixed(2));
+};
+
+export const getBeneficiaryHubs = (beneficiaries, volunteers = []) => {
+  const hubs = {};
+  
+  beneficiaries.forEach(b => {
+    const loc = getBeneficiaryLocation(b);
+    if (!hubs[loc]) {
+      hubs[loc] = { 
+        id: `hub-${loc.replace(/\s+/g, '-').toLowerCase()}`,
+        name: loc, 
+        beneficiaries: [],
+        categories: {},
+        lat: b.geo?.lat,
+        lng: b.geo?.lng
+      };
+    }
+    hubs[loc].beneficiaries.push(b);
+    const need = b.primaryNeed || b.campaignCategory || 'Medicine Distribution';
+    hubs[loc].categories[need] = (hubs[loc].categories[need] || 0) + 1;
+  });
+
+  return Object.values(hubs).map(hub => {
+    const count = hub.beneficiaries.length;
+    const avgUrgency = hub.beneficiaries.reduce((s, b) => s + getBeneficiaryUrgency(b), 0) / count;
+    const avgScore = hub.beneficiaries.reduce((s, b) => s + calculateBeneficiaryMisallocationScore(b, volunteers), 0) / count;
+    
+    // Identify primary need
+    const primaryNeed = Object.entries(hub.categories).sort((a,b) => b[1] - a[1])[0][0];
+
+    return {
+      ...hub,
+      count,
+      avgUrgency,
+      avgScore,
+      primaryNeed,
+    };
+  }).sort((a, b) => b.avgScore - a.avgScore);
+};
+
+export const getBeneficiarySectorHealthStatus = (beneficiaries, locationName, volunteers = []) => {
+  const hub = getBeneficiaryHubs(beneficiaries, volunteers).find(h => h.name === locationName);
+  if (!hub) return { label: 'UNKNOWN', color: 'var(--text-dim)', pulse: 0, percentage: 0 };
+
+  const avgUrgency = hub.avgUrgency;
+  const avgScore = hub.avgScore;
+  
+  // Volunteer Density Impact
+  const localVolunteers = volunteers.filter(v => 
+    v.locationId?.name === locationName || 
+    locationName.includes(v.locationId?.name || '---')
+  ).length;
+
+  const responderBoost = Math.min(3, localVolunteers * 0.5); // Cap at +3 boost
+  const rawStress = (avgUrgency * 0.6) + (avgScore * 0.4);
+  const health = Math.min(10, Math.max(1, (10 - rawStress) + responderBoost));
+  
+  if (health < 4) return { label: 'CRITICAL', color: 'var(--error)', pulse: 1.2, percentage: health * 10 };
+  if (health < 7) return { label: 'UNSTABLE', color: 'var(--warning)', pulse: 0.8, percentage: health * 10 };
+  return { label: 'NOMINAL', color: 'var(--success)', pulse: 0.4, percentage: health * 10 };
+};

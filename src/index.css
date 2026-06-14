@@ -3,8 +3,8 @@
 :root {
   /* Linear-inspired Ultra-Dark Theme with Premium Colorful Accents */
   --bg-main: #050505;
-  --bg-pane: rgba(15, 15, 20, 0.4);
-  --bg-pane-hover: rgba(25, 25, 35, 0.6);
+  --bg-pane: rgba(15, 15, 20, 0.85);
+  --bg-pane-hover: rgba(25, 25, 35, 0.95);
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.15);
   --border-focus: rgba(99, 102, 241, 0.5);
