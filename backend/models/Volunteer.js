@@ -4,8 +4,8 @@ const volunteerSchema = new mongoose.Schema({
   projectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }], // Can span multiple campaigns
   name: { type: String, required: true },
   status: { type: String, enum: ['Active', 'Deployed', 'Inactive'], default: 'Active' },
-  locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', required: true },
-  contactPhone: { type: String, required: true },
+  locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location' },
+  contactPhone: { type: String },
   email: { type: String, unique: true, sparse: true }, // Added for test login
   password: { type: String, default: '123456' },      // Added for test login
   lastActive: { type: Date, default: Date.now },

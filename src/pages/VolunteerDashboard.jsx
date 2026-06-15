@@ -47,12 +47,12 @@ export default function VolunteerDashboard() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'home': return <HomeTab />;
+      case 'home': return <HomeTab onNavigate={setActiveTab} />;
       case 'assignment': return <AssignmentTab />;
       case 'schedule': return <ScheduleTab />;
       case 'alerts': return <AlertsTab />;
       case 'profile': return <ProfileTab />;
-      default: return <HomeTab />;
+      default: return <HomeTab onNavigate={setActiveTab} />;
     }
   };
 

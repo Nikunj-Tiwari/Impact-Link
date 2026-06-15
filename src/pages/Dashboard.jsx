@@ -168,6 +168,18 @@ export default function Dashboard() {
   const [isAllocating, setIsAllocating] = useState(false);
   const [criticalUnmet, setCriticalUnmet] = useState([]);
   const [allocationAdvice, setAllocationAdvice] = useState('');
+  
+  // Dynamic AI Intelligence Feed state
+  const [feedEvents, setFeedEvents] = useState([
+    { time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), msg: 'ImpactLink Neural Core initialized' }
+  ]);
+
+  const addFeedEvent = (msg) => {
+    setFeedEvents(prev => {
+      const newEvent = { time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), msg };
+      return [newEvent, ...prev].slice(0, 5); // Keep last 5 events
+    });
+  };
 
 
   const { refreshProjects, switchProject } = useProject();
@@ -177,6 +189,9 @@ export default function Dashboard() {
     setAllocationResult(null);
     setAllocationAdvice('');
     setCriticalUnmet([]);
+    if (currentProject) {
+      addFeedEvent(`Context shifted to Operational Environment: ${currentProject.name}`);
+    }
     loadAllData();
   }, [currentProject]);
 
@@ -303,6 +318,7 @@ export default function Dashboard() {
       if (data.geo?.lat && data.geo?.lng) {
         setMapPanTarget({ lat: data.geo.lat, lng: data.geo.lng });
       }
+      addFeedEvent(`Registered beneficiary: ${data.firstName} ${data.lastName}${data.primaryNeed ? ` | Needs: ${data.primaryNeed}` : ''}`);
     } catch (error) {
       console.error("Failed to save beneficiary:", error);
     }
@@ -316,6 +332,7 @@ export default function Dashboard() {
       const projectId = currentProject?._id;
       const result = await runAllocation(projectId);
       setAllocationResult(result);
+      addFeedEvent(`Allocation Engine execution complete. Assigned ${result.metrics?.assignedVolunteers || 0} volunteers.`);
       // Refresh incidents to get updated saturationRate
       const updatedIncidents = await api.fetchIncidents(projectId);
       setIncidents(updatedIncidents);
@@ -613,6 +630,7 @@ export default function Dashboard() {
                 clusters={strategicClusters} 
                 onDispatch={handleDispatch}
                 allocationEfficiency={allocationEfficiency}
+                feedEvents={feedEvents}
                 viewMode={viewMode}
                 allocationResult={allocationResult}
                 criticalUnmet={criticalUnmet}
@@ -671,6 +689,9 @@ export default function Dashboard() {
               setEditingProject(null);
             }} 
             initialData={editingProject}
+            onComplete={(p, isEdit) => {
+              addFeedEvent(isEdit ? `Refined environment strategy: ${p.name}` : `Initialized new project environment: ${p.name}`);
+            }}
           />
         )}
       </AnimatePresence>
@@ -707,7 +728,7 @@ export default function Dashboard() {
   );
 }
 
-function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispatches, clusters, onDispatch, allocationEfficiency, viewMode, volunteers, allocationResult, criticalUnmet = [], allocationAdvice, mapPanTarget, onRefresh, onPanTo }) {
+function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispatches, clusters, onDispatch, allocationEfficiency, viewMode, volunteers, allocationResult, criticalUnmet = [], allocationAdvice, mapPanTarget, onRefresh, onPanTo, feedEvents = [] }) {
   const [selectedMission, setSelectedMission] = useState(null);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [isDrillingDown, setIsDrillingDown] = useState(false);
@@ -1105,14 +1126,10 @@ function OverviewTab({ incidents, activeDispatches, setIncidents, setActiveDispa
             <Cpu size={12} color="var(--success)" /> Live AI Intelligence Feed
          </div>
          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {[
-              { time: '14:02', msg: 'Gemini structured paper survey from Sector 4' },
-              { time: '14:03', msg: 'Divergence detected in Medical Supply vs Need' },
-              { time: '14:05', msg: 'Lateral shift recommended: Sector 2 → Sector 5' }
-            ].map((log, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem' }}>
-                 <span style={{ color: 'var(--text-dim)', fontFamily: 'monospace' }}>[{log.time}]</span>
-                 <span style={{ color: idx === 0 ? '#fff' : 'rgba(255,255,255,0.4)' }}>{log.msg}</span>
+            {feedEvents.map((log, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', alignItems: 'flex-start' }}>
+                 <span style={{ color: 'var(--text-dim)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>[{log.time}]</span>
+                 <span style={{ color: idx === 0 ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'color 0.3s', lineHeight: '1.4' }}>{log.msg}</span>
               </div>
             ))}
          </div>

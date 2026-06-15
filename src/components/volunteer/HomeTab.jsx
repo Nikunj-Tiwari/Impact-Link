@@ -23,7 +23,7 @@ import { formatCoords } from '../../services/coordResolver';
 const AUTO_TRACK_STATUSES = ['en_route', 'on_site'];
 const AUTO_TRACK_INTERVAL_MS = 60000; // 60 seconds
 
-export default function HomeTab() {
+export default function HomeTab({ onNavigate }) {
   const { appUser } = useAuth();
   const { fullProfile } = useAssignment();
 
@@ -246,10 +246,12 @@ export default function HomeTab() {
       </section>
 
       {/* Profile Card */}
-      <div style={{ 
+      <div 
+        onClick={() => onNavigate && onNavigate('profile')}
+        style={{ 
         padding: '1.5rem', background: '#111', borderRadius: '24px',
         border: '1px solid rgba(255,255,255,0.08)', display: 'flex',
-        alignItems: 'center', gap: '1rem'
+        alignItems: 'center', gap: '1rem', cursor: 'pointer', transition: 'all 0.2s'
       }}>
         <div style={{ 
           width: '56px', height: '56px', borderRadius: '16px',

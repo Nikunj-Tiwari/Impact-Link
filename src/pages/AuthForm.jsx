@@ -65,13 +65,13 @@ export default function AuthForm() {
       {/* Dynamic Background */}
       <div style={{
         position: 'absolute', top: '-10%', left: '-10%', width: '40%', height: '40%',
-        background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15), transparent 70%)',
-        filter: 'blur(80px)', pointerEvents: 'none'
+        background: `radial-gradient(circle, ${isLogin ? 'rgba(99, 102, 241, 0.15)' : 'rgba(16, 185, 129, 0.15)'}, transparent 70%)`,
+        filter: 'blur(80px)', pointerEvents: 'none', transition: 'background 0.5s ease'
       }} />
       <div style={{
         position: 'absolute', bottom: '-10%', right: '-10%', width: '40%', height: '40%',
-        background: 'radial-gradient(circle, rgba(245, 158, 11, 0.1), transparent 70%)',
-        filter: 'blur(80px)', pointerEvents: 'none'
+        background: `radial-gradient(circle, ${isLogin ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)'}, transparent 70%)`,
+        filter: 'blur(80px)', pointerEvents: 'none', transition: 'background 0.5s ease'
       }} />
 
       <motion.div
@@ -86,10 +86,11 @@ export default function AuthForm() {
       >
         <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
           <div style={{ 
-            width: '48px', height: '48px', background: 'var(--primary)',
+            width: '48px', height: '48px', background: isLogin ? 'var(--primary)' : '#10B981',
             borderRadius: '12px', display: 'flex', alignItems: 'center',
             justifyContent: 'center', margin: '0 auto 1.5rem',
-            boxShadow: '0 0 20px rgba(99, 102, 241, 0.3)'
+            boxShadow: `0 0 20px ${isLogin ? 'rgba(99, 102, 241, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+            transition: 'all 0.3s ease'
           }}>
             <Lock color="#fff" size={24} />
           </div>
@@ -148,12 +149,13 @@ export default function AuthForm() {
             type="submit"
             disabled={loading}
             style={{
-              width: '100%', padding: '1rem', background: 'var(--primary)',
+              width: '100%', padding: '1rem', background: isLogin ? 'var(--primary)' : '#10B981',
               color: '#fff', borderRadius: '12px', border: 'none',
               fontWeight: 700, fontSize: '1rem', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               gap: '0.75rem', marginTop: '0.5rem',
-              boxShadow: '0 10px 20px rgba(99, 102, 241, 0.2)'
+              boxShadow: `0 10px 20px ${isLogin ? 'rgba(99, 102, 241, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`,
+              transition: 'all 0.3s ease'
             }}
           >
             {loading ? <Loader2 className="animate-spin" size={20} /> : (

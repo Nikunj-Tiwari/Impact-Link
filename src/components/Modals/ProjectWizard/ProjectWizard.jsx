@@ -37,7 +37,7 @@ const STEPS = [
   { id: 'resources', title: 'Resource Architecture', icon: Package, subtitle: 'Structure hierarchical supplies' }
 ];
 
-export default function ProjectWizard({ onClose, initialData = null }) {
+export default function ProjectWizard({ onClose, initialData = null, onComplete }) {
   const { refreshProjects, switchProject } = useProject();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -171,6 +171,7 @@ export default function ProjectWizard({ onClose, initialData = null }) {
 
       await refreshProjects();
       switchProject(result._id);
+      if (onComplete) onComplete(result, isEditMode);
       onClose();
     } catch (err) {
       setError(err.message || 'Workflow initialization failed.');
